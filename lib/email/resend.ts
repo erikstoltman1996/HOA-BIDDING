@@ -1,0 +1,46 @@
+import "server-only";
+import { Resend } from "resend";
+import CheckinEmail, { type BidSummaryLine } from "@/emails/CheckinEmail";
+
+function getResend() {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) throw new Error("RESEND_API_KEY is not set");
+  return new Resend(apiKey);
+}
+
+export interface SendCheckinEmailArgs {
+  to: string;
+  recipientName: string;
+  projectTitle: string;
+  orgName: string;
+  respondBy: string | null;
+  bids: BidSummaryLine[];
+  responseUrl: string;
+}
+
+export async function sendCheckinEmail({
+  to,
+  recipientName,
+  projectTitle,
+  orgName,
+  respondBy,
+  bids,
+  responseUrl,
+}: SendCheckinEmailArgs) {
+  const resend = getResend();
+  const from = process.env.RESEND_FROM_EMAIL || "Bid Ledger <onboarding@resend.dev>";
+
+  return resend.emails.send({
+    from,
+    to,
+    subject: `Board check-in: ${projectTitle}`,
+    react: CheckinEmail({
+      recipientName,
+      projectTitle,
+      orgName,
+      respondBy,
+      bids,
+      responseUrl,
+    }),
+  });
+}
