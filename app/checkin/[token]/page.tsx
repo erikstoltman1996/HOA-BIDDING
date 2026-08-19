@@ -51,7 +51,7 @@ export default async function CheckinResponsePage({
 
   return (
     <div className="min-h-screen w-full bg-paper p-4 sm:p-8">
-      <div className="mx-auto max-w-lg rounded border border-rule bg-paper-card p-5 sm:p-8">
+      <div className="mx-auto max-w-lg rounded border border-rule bg-paper-card shadow-card p-5 sm:p-8">
         <ResponseForm
           token={token}
           projectTitle={project?.title || "Bid Comparison"}

@@ -117,7 +117,7 @@ function ContractorRoster({
   }
 
   return (
-    <div className="mb-6 rounded border border-rule bg-paper-card p-3">
+    <div className="mb-6 rounded border border-rule bg-paper-card shadow-card p-3">
       <div className="mb-2 text-xs font-medium text-ink-soft">Contractors on this project</div>
       <ul className="mb-3 space-y-1">
         {contractors.map((c) => (
@@ -195,7 +195,7 @@ function ContractorTimeline({
   const isStale = hasNoUpdates || (daysSince !== null && daysSince > STALE_DAYS);
 
   return (
-    <div className="rounded border border-rule bg-paper-card p-3">
+    <div className="rounded border border-rule bg-paper-card shadow-card p-3">
       <div className="mb-2 flex items-center justify-between">
         <span className="font-serif text-base text-ink">{contractor.name}</span>
         {isStale && (

@@ -114,7 +114,7 @@ function BoardRoster({ boardMembers }: { boardMembers: BoardMember[] }) {
   }
 
   return (
-    <div className="mb-6 rounded border border-rule bg-paper-card p-3">
+    <div className="mb-6 rounded border border-rule bg-paper-card shadow-card p-3">
       <div className="mb-2 text-xs font-medium text-ink-soft">Board members</div>
       <ul className="mb-3 space-y-1">
         {boardMembers.map((m) => (
@@ -195,7 +195,7 @@ function SendCheckinForm({
   }
 
   return (
-    <div className="mb-6 rounded border border-rule bg-paper-card p-3">
+    <div className="mb-6 rounded border border-rule bg-paper-card shadow-card p-3">
       <div className="mb-2 text-xs font-medium text-ink-soft">Send a new check-in</div>
       <div className="mb-3">
         <Label htmlFor="respond-by">Response requested by (optional)</Label>
@@ -256,7 +256,7 @@ function CheckinHistoryCard({
   const myResponse = checkin.responses.find((r) => r.board_member_id === currentUserId);
 
   return (
-    <div className="rounded border border-rule bg-paper-card p-3">
+    <div className="rounded border border-rule bg-paper-card shadow-card p-3">
       <div className="mb-2 flex items-center justify-between">
         <div className="text-xs text-ink-soft">
           Sent {new Date(checkin.created_at).toLocaleDateString()}

@@ -2,14 +2,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
 import { ReserveTrackerService, type CommunityAsset } from "@/lib/ReserveTrackerService";
-import { SignOutButton } from "@/components/SignOutButton";
-import {
-  ArrowRight,
-  Building2,
-  ClipboardList,
-  PiggyBank,
-  Vote,
-} from "@/components/bid-ledger/icons";
+import { AppHeader } from "@/components/AppHeader";
+import { ArrowRight, ClipboardList, PiggyBank, Vote } from "@/components/bid-ledger/icons";
 
 export default async function HomePage() {
   const { authUser, profile } = await requireUser();
@@ -95,25 +89,10 @@ export default async function HomePage() {
 
   return (
     <div className="min-h-screen w-full bg-paper">
-      <header className="border-b-2 border-ink bg-paper-card">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-8">
-          <div className="flex items-center gap-2">
-            <Building2 size={20} className="text-gold" />
-            <div>
-              <div className="text-xs uppercase tracking-widest text-ink-soft" style={{ letterSpacing: "0.15em" }}>
-                Bid Ledger
-              </div>
-              <div className="font-serif text-lg text-ink">{org?.name}</div>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="hidden text-xs text-ink-soft sm:inline">
-              {profile.name || authUser.email} · {profile.role.replace("_", " ")}
-            </span>
-            <SignOutButton />
-          </div>
-        </div>
-      </header>
+      <AppHeader
+        orgName={org?.name ?? ""}
+        userLabel={`${profile.name || authUser.email} · ${profile.role.replace("_", " ")}`}
+      />
 
       <main className="mx-auto max-w-5xl px-4 py-10 sm:px-8">
         <div className="mb-8">
@@ -123,7 +102,7 @@ export default async function HomePage() {
           <p className="text-sm text-ink-soft">Where would you like to go?</p>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
           <HomeCard
             href="/project"
             icon={<ClipboardList size={22} className="text-gold" />}
@@ -191,7 +170,7 @@ function HomeCard({
   return (
     <Link
       href={href}
-      className="group flex flex-col rounded border border-rule bg-paper-card p-5 transition-colors hover:border-gold"
+      className="group flex flex-col rounded-lg border border-rule bg-paper-card p-6 shadow-card transition-all duration-150 hover:-translate-y-0.5 hover:border-gold hover:shadow-card-hover"
     >
       <div className="mb-3 flex items-center justify-between">
         {icon}

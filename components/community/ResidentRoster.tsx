@@ -42,7 +42,7 @@ export function ResidentRoster({ residents }: { residents: ResidentRow[] }) {
   }
 
   return (
-    <div className="mb-6 rounded border border-rule bg-paper-card p-3">
+    <div className="mb-6 rounded border border-rule bg-paper-card shadow-card p-3">
       <div className="mb-2 text-xs font-medium text-ink-soft">Residents</div>
       <ul className="mb-3 space-y-1">
         {residents.map((r) => (

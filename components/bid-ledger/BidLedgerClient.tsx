@@ -258,7 +258,7 @@ export function BidLedgerClient({
         className="border border-rule bg-paper-card text-ink"
       />
 
-      <div className="overflow-x-auto rounded border border-rule bg-paper-card">
+      <div className="overflow-x-auto rounded border border-rule bg-paper-card shadow-card">
         <table className="w-full text-sm" style={{ borderCollapse: "collapse", minWidth: 560 }}>
           <thead>
             <tr>

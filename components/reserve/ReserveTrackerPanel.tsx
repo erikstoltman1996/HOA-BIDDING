@@ -114,7 +114,7 @@ export function ReserveTrackerPanel({
         <h1 className="font-serif text-2xl text-ink sm:text-3xl">10-Year Reserve Outlook</h1>
       </div>
 
-      <div className="mb-6 flex flex-wrap gap-6 rounded border border-rule bg-paper-card p-3">
+      <div className="mb-6 flex flex-wrap gap-6 rounded border border-rule bg-paper-card shadow-card p-3">
         <div>
           <Label htmlFor="reserve-balance">Current reserve balance</Label>
           {isAdmin ? (
@@ -155,7 +155,7 @@ export function ReserveTrackerPanel({
 
       {isAdmin && <AssetManager assets={initialAssets} isPending={isPending} startTransition={startTransition} />}
 
-      <div className="mb-6 rounded border border-rule bg-paper-card p-3">
+      <div className="mb-6 rounded border border-rule bg-paper-card shadow-card p-3">
         <div className="mb-2 text-xs font-medium text-ink-soft">Model an unplanned expenditure</div>
         <p className="mb-3 text-xs text-ink-soft">
           This is a what-if calculator — nothing here is saved. Enter a hypothetical expense as if
@@ -232,7 +232,7 @@ export function ReserveTrackerPanel({
       </div>
 
       {result && Number(expAmount) > 0 && (
-        <div className="mb-4 rounded border border-rule bg-paper-card p-3 text-sm text-ink">
+        <div className="mb-4 rounded border border-rule bg-paper-card shadow-card p-3 text-sm text-ink">
           Before: <span className="font-mono">{result.percentFundedBefore.toFixed(0)}%</span> funded
           → After this expenditure:{" "}
           <span className="font-mono font-semibold" style={{ color: result.alert ? "#B8863B" : "#3F6B4E" }}>
@@ -288,7 +288,7 @@ function AssetManager({
   }
 
   return (
-    <div className="mb-6 rounded border border-rule bg-paper-card p-3">
+    <div className="mb-6 rounded border border-rule bg-paper-card shadow-card p-3">
       <div className="mb-2 text-xs font-medium text-ink-soft">Community assets</div>
       <ul className="mb-3 space-y-1">
         {assets.map((a) => (
@@ -359,7 +359,7 @@ function AssetManager({
 
 function OutlookTable({ outlook }: { outlook: YearProjection[] }) {
   return (
-    <div className="overflow-x-auto rounded border border-rule bg-paper-card">
+    <div className="overflow-x-auto rounded border border-rule bg-paper-card shadow-card">
       <table className="w-full text-sm" style={{ borderCollapse: "collapse", minWidth: 760 }}>
         <thead>
           <tr>

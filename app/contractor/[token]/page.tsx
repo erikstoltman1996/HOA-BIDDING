@@ -23,7 +23,7 @@ export default async function ContractorUpdatePage({
 
   return (
     <div className="min-h-screen w-full bg-paper p-4 sm:p-8">
-      <div className="mx-auto max-w-lg rounded border border-rule bg-paper-card p-5 sm:p-8">
+      <div className="mx-auto max-w-lg rounded border border-rule bg-paper-card shadow-card p-5 sm:p-8">
         <ContractorUpdateForm token={token} projectTitle={projectTitle} contractorName={contractor.name} />
       </div>
     </div>

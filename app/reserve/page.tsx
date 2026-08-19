@@ -1,8 +1,8 @@
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
 import { ReserveTrackerPanel } from "@/components/reserve/ReserveTrackerPanel";
-import { SignOutButton } from "@/components/SignOutButton";
+import { AppHeader } from "@/components/AppHeader";
+import { SectionNav } from "@/components/SectionNav";
 
 export default async function ReservePage() {
   const { authUser, profile } = await requireUser();
@@ -25,21 +25,15 @@ export default async function ReservePage() {
   const isAdmin = profile.role === "admin";
 
   return (
-    <div className="min-h-screen w-full p-4 sm:p-8">
-      <div className="mx-auto max-w-4xl">
-        <div className="mb-4 flex items-center justify-between">
-          <div className="text-xs text-ink-soft">
-            <Link href="/" className="underline hover:text-ink">
-              ← Home
-            </Link>{" "}
-            · {org?.name} · {profile.name || authUser.email} ({profile.role.replace("_", " ")})
-          </div>
-          <SignOutButton />
-        </div>
-
-        <Link href="/project" className="mb-6 inline-block text-sm text-ink underline hover:text-gold">
-          ← Back to project
-        </Link>
+    <div className="min-h-screen w-full">
+      <AppHeader
+        orgName={org?.name ?? ""}
+        userLabel={`${profile.name || authUser.email} · ${profile.role.replace("_", " ")}`}
+        section="Reserve Fund"
+        maxWidthClassName="max-w-4xl"
+      />
+      <div className="mx-auto max-w-4xl p-4 sm:p-8">
+        <SectionNav current="/reserve" />
 
         <ReserveTrackerPanel
           isAdmin={isAdmin}

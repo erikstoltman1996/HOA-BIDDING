@@ -10,7 +10,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
             Capital Project Comparison
           </div>
         </div>
-        <div className="rounded border border-rule bg-paper-card p-6">
+        <div className="rounded border border-rule bg-paper-card shadow-card p-6">
           {children}
         </div>
       </div>

@@ -64,7 +64,7 @@ export function VoteForm({
   const totalResponses = Object.values(tally).reduce((a, b) => a + b, 0);
 
   return (
-    <div className="rounded border border-rule bg-paper-card p-4">
+    <div className="rounded border border-rule bg-paper-card shadow-card p-4">
       <h2 className="mb-1 font-serif text-lg text-ink">{question}</h2>
       {description && <p className="mb-2 text-sm text-ink-soft">{description}</p>}
       {respondBy && <p className="mb-3 text-xs text-ink-soft">Respond by {respondBy}</p>}

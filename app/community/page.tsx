@@ -1,10 +1,10 @@
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
 import { ResidentRoster } from "@/components/community/ResidentRoster";
 import { PollCreateForm } from "@/components/community/PollCreateForm";
 import { PollList, type PollRow } from "@/components/community/PollList";
-import { SignOutButton } from "@/components/SignOutButton";
+import { AppHeader } from "@/components/AppHeader";
+import { SectionNav } from "@/components/SectionNav";
 
 export default async function CommunityPage() {
   const { authUser, profile } = await requireUser();
@@ -52,28 +52,19 @@ export default async function CommunityPage() {
   const isAdmin = profile.role === "admin";
 
   return (
-    <div className="min-h-screen w-full p-4 sm:p-8">
-      <div className="mx-auto max-w-3xl">
-        <div className="mb-4 flex items-center justify-between">
-          <div className="text-xs text-ink-soft">
-            <Link href="/" className="underline hover:text-ink">
-              ← Home
-            </Link>{" "}
-            · {org?.name} · {profile.name || authUser.email} ({profile.role.replace("_", " ")})
-          </div>
-          <SignOutButton />
-        </div>
+    <div className="min-h-screen w-full">
+      <AppHeader
+        orgName={org?.name ?? ""}
+        userLabel={`${profile.name || authUser.email} · ${profile.role.replace("_", " ")}`}
+        section="Community"
+        maxWidthClassName="max-w-3xl"
+      />
+      <div className="mx-auto max-w-3xl p-4 sm:p-8">
+        <SectionNav current="/community" />
 
         <div className="mb-6 border-b-2 border-ink pb-4">
-          <div className="mb-2 text-xs uppercase tracking-widest text-ink-soft" style={{ letterSpacing: "0.15em" }}>
-            Bid Ledger · Community
-          </div>
           <h1 className="font-serif text-2xl text-ink sm:text-3xl">Residents &amp; Community Decisions</h1>
         </div>
-
-        <Link href="/project" className="mb-6 inline-block text-sm text-ink underline hover:text-gold">
-          ← Back to project
-        </Link>
 
         {isAdmin && (
           <>

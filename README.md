@@ -16,7 +16,8 @@ read-only page). Still no multi-project dashboard.
 - [Next.js](https://nextjs.org) (App Router, TypeScript) — frontend + server actions
 - [Supabase](https://supabase.com) — Postgres database + auth (email/password and magic link)
 - [Resend](https://resend.com) + [React Email](https://react.email) — transactional email
-- Tailwind CSS — styling, ported from the `bid-ledger.html` prototype's navy/paper/gold theme
+- Tailwind CSS — styling, ported from the `bid-ledger.html` prototype's navy/paper/gold theme,
+  with Source Serif 4 (via `next/font/google`) for headers instead of the browser's system serif
 
 ## 1. Accounts you need
 
@@ -116,6 +117,11 @@ reserve studies).
   quick at-a-glance stat pulled live (bid count and latest check-in reply tally; resident count
   and open poll count; today's reserve percent-funded, flagged gold if under 70%) so admins and
   board members can tell what needs attention without opening each section.
+- **Shared chrome** — `components/AppHeader.tsx` (logo linking home, org name, current section,
+  user info, sign out) and `components/SectionNav.tsx` (tabs between Bid Ledger / Community /
+  Reserve Fund) are used on every logged-in page for a consistent header and lateral navigation,
+  instead of each page rolling its own. `components/Logo.tsx` is the small navy/gold monogram
+  mark, reused at a larger size as `app/icon.svg` for the favicon.
 - **Bid ledger** — `app/project/page.tsx` loads the org's one Phase-1 project, its shared
   line items, its bids, and each bid's per-line-item amounts, then renders
   `BidLedgerClient`, which mirrors the prototype's UI and table exactly. Edits call Server

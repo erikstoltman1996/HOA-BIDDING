@@ -53,7 +53,7 @@ export function PollList({
         const responded = poll.responses.length;
 
         return (
-          <div key={poll.id} className="rounded border border-rule bg-paper-card p-3">
+          <div key={poll.id} className="rounded border border-rule bg-paper-card shadow-card p-3">
             <div className="mb-1 flex items-center justify-between gap-2">
               <span className="font-serif text-base text-ink">{poll.question}</span>
               <span

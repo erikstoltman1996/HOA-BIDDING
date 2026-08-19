@@ -5,7 +5,8 @@ import { fmt, money } from "@/lib/money";
 import { BidLedgerClient, type BidRow, type LineItemRow } from "@/components/bid-ledger/BidLedgerClient";
 import { CheckinPanel, type CheckinRow } from "@/components/checkin/CheckinPanel";
 import { ContractorPanel, type WeeklyUpdateRow } from "@/components/contractor/ContractorPanel";
-import { SignOutButton } from "@/components/SignOutButton";
+import { AppHeader } from "@/components/AppHeader";
+import { SectionNav } from "@/components/SectionNav";
 
 export default async function ProjectPage() {
   const { authUser, profile } = await requireUser();
@@ -157,18 +158,14 @@ export default async function ProjectPage() {
   const isAdmin = profile.role === "admin";
 
   return (
-    <div className="min-h-screen w-full p-4 sm:p-8">
-      <div className="mx-auto max-w-5xl">
-        <div className="mb-4 flex items-center justify-between">
-          <div className="text-xs text-ink-soft">
-            <Link href="/" className="underline hover:text-ink">
-              ← Home
-            </Link>{" "}
-            · {org?.name} · {profile.name || authUser.email} ({profile.role.replace("_", " ")})
-          </div>
-          <SignOutButton />
-        </div>
-
+    <div className="min-h-screen w-full">
+      <AppHeader
+        orgName={org?.name ?? ""}
+        userLabel={`${profile.name || authUser.email} · ${profile.role.replace("_", " ")}`}
+        section="Bid Ledger"
+      />
+      <div className="mx-auto max-w-5xl p-4 sm:p-8">
+        <SectionNav current="/project" />
         <BidLedgerClient
           projectId={project.id}
           initialTitle={project.title}
@@ -199,15 +196,6 @@ export default async function ProjectPage() {
           // eslint-disable-next-line react-hooks/purity
           now={Date.now()}
         />
-
-        <div className="mt-10 flex flex-wrap gap-4 border-t-2 border-ink pt-6">
-          <Link href="/community" className="text-sm text-ink underline hover:text-gold">
-            Manage residents &amp; community decisions →
-          </Link>
-          <Link href="/reserve" className="text-sm text-ink underline hover:text-gold">
-            Reserve fund outlook →
-          </Link>
-        </div>
       </div>
     </div>
   );
