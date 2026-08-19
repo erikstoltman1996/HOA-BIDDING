@@ -324,6 +324,44 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["poll_responses"]["Insert"]>;
         Relationships: [];
       };
+      reserve_settings: {
+        Row: {
+          org_id: string;
+          current_balance: number;
+          annual_contribution: number;
+          updated_at: string;
+        };
+        Insert: {
+          org_id: string;
+          current_balance?: number;
+          annual_contribution?: number;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["reserve_settings"]["Insert"]>;
+        Relationships: [];
+      };
+      reserve_assets: {
+        Row: {
+          id: string;
+          org_id: string;
+          name: string;
+          expected_lifespan_years: number;
+          replacement_cost: number;
+          current_age_years: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          name?: string;
+          expected_lifespan_years?: number;
+          replacement_cost?: number;
+          current_age_years?: number;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["reserve_assets"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {

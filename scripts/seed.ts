@@ -296,6 +296,29 @@ async function main() {
     });
   }
 
+  const { data: existingSettings } = await admin
+    .from("reserve_settings")
+    .select("*")
+    .eq("org_id", orgId)
+    .maybeSingle();
+  if (!existingSettings) {
+    await admin.from("reserve_settings").insert({
+      org_id: orgId,
+      current_balance: 145_000,
+      annual_contribution: 20_000,
+    });
+  }
+
+  const { data: existingAssets } = await admin.from("reserve_assets").select("*").eq("org_id", orgId);
+  if (!existingAssets || existingAssets.length === 0) {
+    await admin.from("reserve_assets").insert([
+      { org_id: orgId, name: "Pool & pump", expected_lifespan_years: 8, replacement_cost: 18_000, current_age_years: 5 },
+      { org_id: orgId, name: "Building A Roof", expected_lifespan_years: 25, replacement_cost: 90_000, current_age_years: 12 },
+      { org_id: orgId, name: "Building B Decks", expected_lifespan_years: 15, replacement_cost: 40_000, current_age_years: 13 },
+      { org_id: orgId, name: "Clubhouse HVAC", expected_lifespan_years: 12, replacement_cost: 25_000, current_age_years: 4 },
+    ]);
+  }
+
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 
   console.log("\nSeed complete.\n");

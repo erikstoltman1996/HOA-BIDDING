@@ -197,9 +197,12 @@ export default async function ProjectPage() {
           now={Date.now()}
         />
 
-        <div className="mt-10 border-t-2 border-ink pt-6">
+        <div className="mt-10 flex flex-wrap gap-4 border-t-2 border-ink pt-6">
           <Link href="/community" className="text-sm text-ink underline hover:text-gold">
             Manage residents &amp; community decisions →
+          </Link>
+          <Link href="/reserve" className="text-sm text-ink underline hover:text-gold">
+            Reserve fund outlook →
           </Link>
         </div>
       </div>

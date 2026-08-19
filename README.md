@@ -27,9 +27,10 @@ read-only page). Still no multi-project dashboard.
 
 ## 2. Set up the database
 
-In your Supabase project, open the SQL editor and run the contents of
-`supabase/migrations/0001_init.sql`, **then** `supabase/migrations/0002_contractor_and_voting.sql`,
-in that order. (If you use the Supabase CLI instead: `supabase link` then `supabase db push`.)
+In your Supabase project, open the SQL editor and run these three files **in order**:
+`supabase/migrations/0001_init.sql`, then `0002_contractor_and_voting.sql`, then
+`0003_reserve_tracker.sql`. (If you use the Supabase CLI instead: `supabase link` then
+`supabase db push`.)
 
 `0001_init.sql` creates the Phase 1 tables (`organizations`, `users`, `projects`, `line_items`,
 `bids`, `bid_line_item_amounts`, `board_checkins`, `checkin_responses`), row-level security
@@ -41,6 +42,10 @@ once at signup) and `record_checkin_response_by_token` (the no-login board check
 `poll_options`, `poll_responses`), plus the `record_poll_response_by_token` RPC and a public
 `weekly-update-photos` Supabase Storage bucket for contractor photo uploads (created by the
 migration itself — no separate dashboard step needed).
+
+`0003_reserve_tracker.sql` adds `reserve_settings` (current balance, planned annual
+contribution — one row per org) and `reserve_assets` (the community assets tracked for the
+10-year outlook on `/reserve`).
 
 ## 3. Configure auth redirects
 
@@ -88,10 +93,10 @@ no-login `/contractor/[token]` and `/vote/[token]` demo links.
 ## Tests
 
 `npm test` runs the unit test suite (Vitest). Currently covers `lib/ReserveTrackerService.ts`
-— a standalone reserve-fund projection calculator (not yet wired into any page) that projects
-the balance forward, applies scheduled asset replacements and one-off unplanned expenditures,
-and flags when projected funding drops below a threshold (70% by default — the standard
-"at risk" line used in real reserve studies).
+— the reserve-fund projection calculator behind `/reserve` — projecting the balance forward,
+applying scheduled asset replacements and one-off unplanned expenditures, and flagging when
+projected funding drops below a threshold (70% by default — the standard "at risk" line used
+in real reserve studies).
 
 ## How the pieces fit together
 
@@ -132,6 +137,14 @@ and flags when projected funding drops below a threshold (70% by default — the
   than being single-use). Carries the same non-binding disclaimer as the board check-in —
   this is informal input, not a substitute for whatever your bylaws and state law require for
   an actual vote on spending.
+- **Reserve fund outlook** (`/reserve`) — an admin sets the current reserve balance, a planned
+  annual contribution, and the community assets being tracked (name, replacement cost,
+  expected lifespan, current age); board members see it read-only. `lib/ReserveTrackerService.ts`
+  runs entirely client-side against those numbers plus a live, unsaved "what if I had to spend
+  $X in year N" scenario, producing a 10-year table of scheduled replacements, that
+  expenditure, and the resulting percent-funded each year — flagging any year that drops below
+  70%. Nothing about the what-if scenario is persisted; only the balance, contribution, and
+  asset list are.
 
 ## Deploying
 
