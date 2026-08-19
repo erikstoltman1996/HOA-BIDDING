@@ -205,10 +205,106 @@ async function main() {
     ]);
   }
 
+  const { data: existingContractors } = await admin
+    .from("contractors")
+    .select("*")
+    .eq("project_id", project.id);
+
+  let contractor = existingContractors?.[0];
+  if (!contractor) {
+    const { data: created, error } = await admin
+      .from("contractors")
+      .insert({
+        project_id: project.id,
+        name: "Northgate Roofing Co.",
+        contact_email: "crew@northgateroofing.demo",
+        contact_phone: "555-0142",
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    contractor = created;
+
+    // Two sample weekly updates so the timeline isn't empty. No real photo
+    // files are attached — the contractor portal is where real photos get
+    // uploaded.
+    await admin.from("weekly_updates").insert([
+      {
+        project_id: project.id,
+        contractor_id: contractor.id,
+        percent_complete: 25,
+        timeline_status: "on_track",
+        issues_text: "Tear-off complete on the south face, no surprises under the old shingles.",
+        next_milestone_date: null,
+        created_at: new Date(Date.now() - 9 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        project_id: project.id,
+        contractor_id: contractor.id,
+        percent_complete: 55,
+        timeline_status: "ahead",
+        issues_text: "Weather cooperated, decking is done a few days early.",
+        next_milestone_date: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+        created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+    ]);
+  }
+
+  const { data: existingResidents } = await admin.from("residents").select("*").eq("org_id", orgId);
+  let residents = existingResidents ?? [];
+  if (residents.length === 0) {
+    const { data: inserted, error } = await admin
+      .from("residents")
+      .insert([
+        { org_id: orgId, unit_label: "Building A, Unit 1" },
+        { org_id: orgId, unit_label: "Building A, Unit 2" },
+        { org_id: orgId, unit_label: "Building B, Unit 1" },
+      ])
+      .select();
+    if (error) throw error;
+    residents = inserted;
+  }
+
+  const { data: existingPolls } = await admin.from("board_polls").select("*").eq("org_id", orgId);
+  if (!existingPolls || existingPolls.length === 0) {
+    const { data: poll, error: pollError } = await admin
+      .from("board_polls")
+      .insert({
+        org_id: orgId,
+        question: "Should we use this year's capital funds to upgrade the pool or fix the Building B decks?",
+        description: "Both projects are in the reserve study. We can only fund one this year.",
+        created_by: adminUser.id,
+      })
+      .select()
+      .single();
+    if (pollError) throw pollError;
+
+    const { data: pollOptions, error: optionsError } = await admin
+      .from("poll_options")
+      .insert([
+        { poll_id: poll.id, label: "Upgrade the pool", sort_order: 0 },
+        { poll_id: poll.id, label: "Fix Building B decks", sort_order: 1 },
+      ])
+      .select();
+    if (optionsError) throw optionsError;
+
+    await admin.from("poll_responses").insert({
+      poll_id: poll.id,
+      resident_id: residents[0].id,
+      option_id: pollOptions[1].id,
+      note: "The decks feel unsafe already, that seems more urgent.",
+    });
+  }
+
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+
   console.log("\nSeed complete.\n");
   console.log("Log in with:");
   console.log(`  Admin:        ${DEMO_ADMIN.email} / ${DEMO_PASSWORD}`);
   DEMO_BOARD_MEMBERS.forEach((bm) => console.log(`  Board member: ${bm.email} / ${DEMO_PASSWORD}`));
+  console.log("\nNo-login demo links:");
+  console.log(`  Contractor update form: ${siteUrl}/contractor/${contractor.access_token}`);
+  console.log(`  Resident voting page:   ${siteUrl}/vote/${residents[0].access_token}`);
 }
 
 main().catch((err) => {

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/auth";
-import { sendCheckinEmail } from "@/lib/email/resend";
+import { sendCheckinEmail, sendContractorInviteEmail } from "@/lib/email/resend";
 import { fmt, money } from "@/lib/money";
 import type { Database } from "@/types/database";
 
@@ -281,4 +281,81 @@ export async function resendCheckinReminders(checkinId: string) {
       }),
     ),
   );
+}
+
+// --- Contractors ------------------------------------------------------
+// Board-only management. Weekly updates + photos submitted by the
+// contractor themselves are handled by app/contractor/[token]/actions.ts,
+// which runs entirely server-side with the admin client — contractors never
+// get a Supabase Auth session or a table grant.
+
+export async function addContractor(
+  projectId: string,
+  name: string,
+  email: string,
+  phone: string,
+) {
+  const admin = await requireAdmin();
+  const supabase = await createClient();
+
+  const { data: contractor, error } = await supabase
+    .from("contractors")
+    .insert({
+      project_id: projectId,
+      name,
+      contact_email: email || null,
+      contact_phone: phone || null,
+    })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+
+  if (email) {
+    const [{ data: project }, { data: org }] = await Promise.all([
+      supabase.from("projects").select("title").eq("id", projectId).single(),
+      supabase.from("organizations").select("name").eq("id", admin.org_id!).single(),
+    ]);
+    await sendContractorInviteEmail({
+      to: email,
+      contractorName: name,
+      projectTitle: project?.title || "your project",
+      orgName: org?.name || "",
+      updateUrl: `${siteUrl()}/contractor/${contractor.access_token}`,
+    });
+  }
+
+  revalidatePath("/project");
+}
+
+export async function removeContractor(contractorId: string) {
+  await requireAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.from("contractors").delete().eq("id", contractorId);
+  if (error) throw new Error(error.message);
+  revalidatePath("/project");
+}
+
+export async function sendContractorReminder(contractorId: string) {
+  const admin = await requireAdmin();
+  const supabase = await createClient();
+
+  const { data: contractor } = await supabase
+    .from("contractors")
+    .select("*, projects(title)")
+    .eq("id", contractorId)
+    .single();
+  if (!contractor) throw new Error("Contractor not found");
+  if (!contractor.contact_email) throw new Error("This contractor has no email on file");
+
+  const { data: org } = await supabase.from("organizations").select("name").eq("id", admin.org_id!).single();
+  const projectTitle = (contractor as unknown as { projects: { title: string } }).projects?.title || "your project";
+
+  await sendContractorInviteEmail({
+    to: contractor.contact_email,
+    contractorName: contractor.name,
+    projectTitle,
+    orgName: org?.name || "",
+    updateUrl: `${siteUrl()}/contractor/${contractor.access_token}`,
+    isReminder: true,
+  });
 }

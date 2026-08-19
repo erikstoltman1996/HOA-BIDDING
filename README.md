@@ -6,7 +6,10 @@ database-backed bid comparison ledger, and a board check-in flow that sends real
 
 See `docs/bid-ledger-saas-spec.md` for the full product spec and roadmap, and
 `docs/prototype.html` for the original static prototype this app's design is ported from.
-This app implements **Phase 1** only — no multi-project dashboard, no contractor portal yet.
+This app implements Phase 1 (accounts, bid ledger, board check-in) plus two features pulled
+forward from later phases: a contractor weekly-update portal with photos (Phase 3), and
+informal resident voting on community decisions (a new addition beyond the original Phase 4
+read-only page). Still no multi-project dashboard.
 
 ## Stack
 
@@ -25,14 +28,19 @@ This app implements **Phase 1** only — no multi-project dashboard, no contract
 ## 2. Set up the database
 
 In your Supabase project, open the SQL editor and run the contents of
-`supabase/migrations/0001_init.sql`. (If you use the Supabase CLI instead:
-`supabase link` then `supabase db push`.)
+`supabase/migrations/0001_init.sql`, **then** `supabase/migrations/0002_contractor_and_voting.sql`,
+in that order. (If you use the Supabase CLI instead: `supabase link` then `supabase db push`.)
 
-This creates all Phase 1 tables (`organizations`, `users`, `projects`, `line_items`, `bids`,
-`bid_line_item_amounts`, `board_checkins`, `checkin_responses`), row-level security policies
-scoping every table to the caller's org, and two RPC functions the app calls directly:
-`create_org_and_admin` (run once at signup) and `record_checkin_response_by_token` (the
-no-login board check-in response).
+`0001_init.sql` creates the Phase 1 tables (`organizations`, `users`, `projects`, `line_items`,
+`bids`, `bid_line_item_amounts`, `board_checkins`, `checkin_responses`), row-level security
+policies scoping every table to the caller's org, and two RPCs: `create_org_and_admin` (run
+once at signup) and `record_checkin_response_by_token` (the no-login board check-in response).
+
+`0002_contractor_and_voting.sql` adds the contractor portal (`contractors`, `weekly_updates`,
+`photos` — board-only visibility) and resident voting (`residents`, `board_polls`,
+`poll_options`, `poll_responses`), plus the `record_poll_response_by_token` RPC and a public
+`weekly-update-photos` Supabase Storage bucket for contractor photo uploads (created by the
+migration itself — no separate dashboard step needed).
 
 ## 3. Configure auth redirects
 
@@ -66,14 +74,24 @@ cp .env.local.example .env.local
 
 ```bash
 npm install
-npm run seed   # creates a demo org, admin, two board members, a project, and sample bids
+npm run seed   # creates a demo org, admin, two board members, a project, sample bids,
+                # a demo contractor with two weekly updates, three residents, and a poll
 npm run dev
 ```
 
 Then visit `http://localhost:3000` and log in with the credentials the seed script prints
 (demo admin: `admin@demo.bidledger.app`, board members: `pat@demo.bidledger.app` /
 `sam@demo.bidledger.app`, all sharing one demo password printed by the script). Or go to
-`/signup` to create your own organization from scratch.
+`/signup` to create your own organization from scratch. The seed script also prints the
+no-login `/contractor/[token]` and `/vote/[token]` demo links.
+
+## Tests
+
+`npm test` runs the unit test suite (Vitest). Currently covers `lib/ReserveTrackerService.ts`
+— a standalone reserve-fund projection calculator (not yet wired into any page) that projects
+the balance forward, applies scheduled asset replacements and one-off unplanned expenditures,
+and flags when projected funding drops below a threshold (70% by default — the standard
+"at risk" line used in real reserve studies).
 
 ## How the pieces fit together
 
@@ -95,6 +113,25 @@ Then visit `http://localhost:3000` and log in with the credentials the seed scri
   page for board members who are logged in, so either path works. Every place a pick can be
   recorded shows the same "this is not an official vote" disclaimer
   (`components/checkin/CheckinDisclaimer.tsx`).
+- **Contractor updates** — an admin adds a contractor (name, email, phone) to the project;
+  if an email is given they get a Resend email with a personal, stable link
+  (`emails/ContractorInviteEmail.tsx`). That link opens `/contractor/[token]` — no login,
+  reused every week — where they post % complete, an on-track/ahead/delayed status, issues,
+  a next-milestone date, and up to 6 photos. Submission is a Server Action
+  (`app/contractor/[token]/actions.ts`) that validates the token and writes with the
+  service-role client — contractors never get a Supabase Auth session or a table grant.
+  Photos upload to a public Supabase Storage bucket; only the URL is ever exposed. The
+  timeline and roster on `/project` are board-only — residents never see any of this.
+- **Resident voting** — org-scoped, not tied to a project, since residents live in the HOA
+  regardless of which capital project is active. An admin manages a `residents` list
+  (`/community`, each with a stable per-unit link, emailed via `emails/ResidentInviteEmail.tsx`
+  if an address is on file, otherwise copy-and-share manually) and publishes polls with 2+
+  options. `/vote/[token]` lists open polls for that resident's org; voting calls the
+  `record_poll_response_by_token` RPC directly from the browser (same shape as check-in
+  responses, but upserts since a resident's link is reused across every future poll rather
+  than being single-use). Carries the same non-binding disclaimer as the board check-in —
+  this is informal input, not a substitute for whatever your bylaws and state law require for
+  an actual vote on spending.
 
 ## Deploying
 

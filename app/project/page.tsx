@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { fmt, money } from "@/lib/money";
 import { BidLedgerClient, type BidRow, type LineItemRow } from "@/components/bid-ledger/BidLedgerClient";
 import { CheckinPanel, type CheckinRow } from "@/components/checkin/CheckinPanel";
+import { ContractorPanel, type WeeklyUpdateRow } from "@/components/contractor/ContractorPanel";
 import { SignOutButton } from "@/components/SignOutButton";
 
 export default async function ProjectPage() {
@@ -100,9 +101,40 @@ export default async function ProjectPage() {
   }));
 
   const checkinIds = (checkinsRaw ?? []).map((c) => c.id);
-  const { data: responses } = checkinIds.length
-    ? await supabase.from("checkin_responses").select("*").in("checkin_id", checkinIds)
+  const [{ data: responses }, { data: contractors }] = await Promise.all([
+    checkinIds.length
+      ? supabase.from("checkin_responses").select("*").in("checkin_id", checkinIds)
+      : Promise.resolve({ data: [] }),
+    supabase.from("contractors").select("*").eq("project_id", project.id).order("created_at"),
+  ]);
+
+  const contractorIds = (contractors ?? []).map((c) => c.id);
+  const { data: weeklyUpdatesRaw } = contractorIds.length
+    ? await supabase
+        .from("weekly_updates")
+        .select("*")
+        .in("contractor_id", contractorIds)
+        .order("created_at", { ascending: false })
     : { data: [] };
+
+  const updateIds = (weeklyUpdatesRaw ?? []).map((u) => u.id);
+  const { data: photos } = updateIds.length
+    ? await supabase.from("photos").select("*").in("update_id", updateIds)
+    : { data: [] };
+
+  const weeklyUpdates: WeeklyUpdateRow[] = (weeklyUpdatesRaw ?? []).map((u) => ({
+    id: u.id,
+    contractor_id: u.contractor_id,
+    week_of: u.week_of,
+    percent_complete: u.percent_complete,
+    timeline_status: u.timeline_status,
+    issues_text: u.issues_text,
+    next_milestone_date: u.next_milestone_date,
+    created_at: u.created_at,
+    photos: (photos ?? [])
+      .filter((p) => p.update_id === u.id)
+      .map((p) => ({ id: p.id, url: p.url, caption: p.caption })),
+  }));
 
   const checkins: CheckinRow[] = (checkinsRaw ?? []).map((c) => ({
     id: c.id,
@@ -150,6 +182,26 @@ export default async function ProjectPage() {
           bids={checkinBids}
           checkins={checkins}
         />
+
+        <ContractorPanel
+          projectId={project.id}
+          isAdmin={isAdmin}
+          contractors={contractors ?? []}
+          updates={weeklyUpdates}
+          // This is an async Server Component — it renders once per request
+          // on the server, not repeatedly like a client component under
+          // Strict Mode/concurrent rendering, so a one-time Date.now() here
+          // carries none of the purity/hydration risk the lint rule guards
+          // against on the client.
+          // eslint-disable-next-line react-hooks/purity
+          now={Date.now()}
+        />
+
+        <div className="mt-10 border-t-2 border-ink pt-6">
+          <Link href="/community" className="text-sm text-ink underline hover:text-gold">
+            Manage residents &amp; community decisions →
+          </Link>
+        </div>
       </div>
     </div>
   );
