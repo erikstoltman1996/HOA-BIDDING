@@ -12,4 +12,9 @@ export {
   Mail,
   Send,
   UserPlus,
+  Building2,
+  PiggyBank,
+  ArrowRight,
+  ClipboardList,
+  Vote,
 } from "lucide-react";

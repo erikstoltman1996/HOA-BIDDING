@@ -56,7 +56,10 @@ export default async function CommunityPage() {
       <div className="mx-auto max-w-3xl">
         <div className="mb-4 flex items-center justify-between">
           <div className="text-xs text-ink-soft">
-            {org?.name} · {profile.name || authUser.email} ({profile.role.replace("_", " ")})
+            <Link href="/" className="underline hover:text-ink">
+              ← Home
+            </Link>{" "}
+            · {org?.name} · {profile.name || authUser.email} ({profile.role.replace("_", " ")})
           </div>
           <SignOutButton />
         </div>

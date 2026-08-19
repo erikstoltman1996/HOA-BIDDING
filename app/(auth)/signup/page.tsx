@@ -45,7 +45,7 @@ export default function SignupPage() {
           setError(rpcError.message);
           return;
         }
-        router.push("/project");
+        router.push("/");
         return;
       }
       setStatus("check-email");
