@@ -9,7 +9,7 @@ import {
 import {
   ReserveTrackerService,
   type CommunityAsset,
-  type YearOutlook,
+  type YearProjection,
 } from "@/lib/ReserveTrackerService";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
@@ -25,6 +25,10 @@ export interface ReserveAssetRow {
 }
 
 const ALERT_THRESHOLD = 70;
+
+function todayIso() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 export function ReserveTrackerPanel({
   isAdmin,
@@ -43,8 +47,9 @@ export function ReserveTrackerPanel({
 
   const [expDescription, setExpDescription] = useState("");
   const [expAmount, setExpAmount] = useState("");
-  const [expYear, setExpYear] = useState("0");
   const [expAssetId, setExpAssetId] = useState("");
+  const [interestRate, setInterestRate] = useState("");
+  const [inflationRate, setInflationRate] = useState("");
 
   function saveSettings(nextBalance: string, nextContribution: string) {
     const b = Number(nextBalance);
@@ -54,36 +59,51 @@ export function ReserveTrackerPanel({
     }
   }
 
-  const assets: CommunityAsset[] = initialAssets.map((a) => ({
-    id: a.id,
-    name: a.name,
-    expectedLifespanYears: a.expected_lifespan_years,
-    replacementCost: a.replacement_cost,
-    currentAgeYears: a.current_age_years,
-  }));
+  // The stored schema tracks each asset's age; the service works in terms
+  // of remaining life instead. Converted here rather than changing the
+  // schema, so nothing about how admins enter assets has to change.
+  const assets: CommunityAsset[] = initialAssets.map((a) => {
+    const usefulLifeYears = a.expected_lifespan_years;
+    const remainingUsefulLifeYears = Math.max(
+      0,
+      Math.min(usefulLifeYears, usefulLifeYears - a.current_age_years),
+    );
+    return {
+      id: a.id,
+      name: a.name,
+      replacementCost: a.replacement_cost,
+      usefulLifeYears,
+      remainingUsefulLifeYears,
+    };
+  });
 
   const result = useMemo(() => {
     const b = Number(balance);
     const c = Number(contribution);
     const amount = Number(expAmount);
-    if (!Number.isFinite(b) || !Number.isFinite(c)) return null;
+    if (!Number.isFinite(b) || !Number.isFinite(c) || b < 0 || c < 0) return null;
     try {
-      const service = new ReserveTrackerService({ alertThresholdPercent: ALERT_THRESHOLD });
-      return service.calculate({
+      return ReserveTrackerService.run({
         currentReserveBalance: b,
-        annualContribution: c,
         assets,
-        newExpenditure: {
-          description: expDescription,
-          amount: Number.isFinite(amount) && amount > 0 ? amount : 0,
-          yearIndex: Math.max(0, Number(expYear) || 0),
-          assetId: expAssetId || undefined,
-        },
+        annualContribution: c,
+        interestRatePercent: Number(interestRate) || 0,
+        inflationRatePercent: Number(inflationRate) || 0,
+        alertThresholdPercent: ALERT_THRESHOLD,
+        unplannedExpenditure:
+          Number.isFinite(amount) && amount > 0
+            ? {
+                description: expDescription || "Unplanned expenditure",
+                amount,
+                date: todayIso(),
+                assetId: expAssetId || undefined,
+              }
+            : undefined,
       });
     } catch {
       return null;
     }
-  }, [balance, contribution, assets, expDescription, expAmount, expYear, expAssetId]);
+  }, [balance, contribution, assets, expDescription, expAmount, expAssetId, interestRate, inflationRate]);
 
   return (
     <div>
@@ -128,7 +148,7 @@ export function ReserveTrackerPanel({
         <div>
           <div className="mb-1 text-xs font-medium text-ink-soft">Funded today</div>
           <p className="font-mono text-ink">
-            {result ? `${result.currentPercentFunded.toFixed(0)}%` : "—"}
+            {result ? `${result.percentFundedBefore.toFixed(0)}%` : "—"}
           </p>
         </div>
       </div>
@@ -138,17 +158,17 @@ export function ReserveTrackerPanel({
       <div className="mb-6 rounded border border-rule bg-paper-card p-3">
         <div className="mb-2 text-xs font-medium text-ink-soft">Model an unplanned expenditure</div>
         <p className="mb-3 text-xs text-ink-soft">
-          This is a what-if calculator — nothing here is saved. Try a scenario to see how it moves the
-          10-year outlook below.
+          This is a what-if calculator — nothing here is saved. Enter a hypothetical expense as if
+          it happened today and see how it moves the outlook below.
         </p>
-        <div className="flex flex-wrap items-end gap-2">
+        <div className="mb-2 flex flex-wrap items-end gap-2">
           <div className="min-w-[160px] flex-1">
             <Label htmlFor="exp-description">Description</Label>
             <Input
               id="exp-description"
               value={expDescription}
               onChange={(e) => setExpDescription(e.target.value)}
-              placeholder="Early pool pump replacement"
+              placeholder="Emergency pool pump replacement"
             />
           </div>
           <div className="w-32">
@@ -159,16 +179,6 @@ export function ReserveTrackerPanel({
               value={expAmount}
               onChange={(e) => setExpAmount(e.target.value)}
               placeholder="0"
-              className="font-mono"
-            />
-          </div>
-          <div className="w-24">
-            <Label htmlFor="exp-year">In year</Label>
-            <Input
-              id="exp-year"
-              inputMode="numeric"
-              value={expYear}
-              onChange={(e) => setExpYear(e.target.value)}
               className="font-mono"
             />
           </div>
@@ -189,16 +199,56 @@ export function ReserveTrackerPanel({
             </select>
           </div>
         </div>
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="w-32">
+            <Label htmlFor="interest-rate">Interest rate %</Label>
+            <Input
+              id="interest-rate"
+              inputMode="decimal"
+              value={interestRate}
+              onChange={(e) => setInterestRate(e.target.value)}
+              placeholder="0"
+              className="font-mono"
+            />
+          </div>
+          <div className="w-32">
+            <Label htmlFor="inflation-rate">Inflation rate %</Label>
+            <Input
+              id="inflation-rate"
+              inputMode="decimal"
+              value={inflationRate}
+              onChange={(e) => setInflationRate(e.target.value)}
+              placeholder="0"
+              className="font-mono"
+            />
+          </div>
+        </div>
+        {expAssetId && (
+          <p className="mt-2 text-xs text-ink-soft">
+            Linking an asset assumes it was fully replaced — its remaining life resets to full in
+            this scenario, same as a real replacement would.
+          </p>
+        )}
       </div>
 
-      {result?.alert && (
-        <div className="mb-4 rounded bg-gold-tint p-3 text-sm text-ink">
-          <strong>Funding drops below {ALERT_THRESHOLD}%</strong> in year {result.firstAlertYear}{" "}
-          of this projection.
+      {result && Number(expAmount) > 0 && (
+        <div className="mb-4 rounded border border-rule bg-paper-card p-3 text-sm text-ink">
+          Before: <span className="font-mono">{result.percentFundedBefore.toFixed(0)}%</span> funded
+          → After this expenditure:{" "}
+          <span className="font-mono font-semibold" style={{ color: result.alert ? "#B8863B" : "#3F6B4E" }}>
+            {result.percentFundedAfter.toFixed(0)}%
+          </span>{" "}
+          funded
         </div>
       )}
 
-      {result && <OutlookTable outlook={result.outlook} />}
+      {result?.alertMessage && (
+        <div className="mb-4 rounded bg-gold-tint p-3 text-sm text-ink">
+          <strong>{result.alertMessage}</strong>
+        </div>
+      )}
+
+      {result && <OutlookTable outlook={result.tenYearOutlook} />}
     </div>
   );
 }
@@ -307,13 +357,13 @@ function AssetManager({
   );
 }
 
-function OutlookTable({ outlook }: { outlook: YearOutlook[] }) {
+function OutlookTable({ outlook }: { outlook: YearProjection[] }) {
   return (
     <div className="overflow-x-auto rounded border border-rule bg-paper-card">
-      <table className="w-full text-sm" style={{ borderCollapse: "collapse", minWidth: 700 }}>
+      <table className="w-full text-sm" style={{ borderCollapse: "collapse", minWidth: 760 }}>
         <thead>
           <tr>
-            {["Year", "Start", "+Contribution", "-Scheduled", "-Unplanned", "End", "Fully funded", "% Funded"].map(
+            {["Year", "Start", "+Contribution", "+Interest", "-Replacements", "End", "Fully funded", "% Funded"].map(
               (h) => (
                 <th key={h} className="border-b-2 border-ink p-2 text-left text-xs font-medium text-ink-soft">
                   {h}
@@ -323,34 +373,34 @@ function OutlookTable({ outlook }: { outlook: YearOutlook[] }) {
           </tr>
         </thead>
         <tbody>
-          {outlook.map((y) => {
-            const isBelowThreshold = y.percentFunded < ALERT_THRESHOLD;
-            return (
-              <tr key={y.year}>
-                <td className="border-t border-rule p-2 font-mono text-ink">{y.year}</td>
-                <td className="border-t border-rule p-2 font-mono text-ink-soft">{fmt(y.startingBalance)}</td>
-                <td className="border-t border-rule p-2 font-mono text-check-green">
-                  {y.contributions > 0 ? `+${fmt(y.contributions)}` : "—"}
-                </td>
-                <td className="border-t border-rule p-2 font-mono text-ink-soft">
-                  {y.scheduledReplacementCost > 0 ? `-${fmt(y.scheduledReplacementCost)}` : "—"}
-                </td>
-                <td className="border-t border-rule p-2 font-mono text-ink-soft">
-                  {y.unplannedExpenditure > 0 ? `-${fmt(y.unplannedExpenditure)}` : "—"}
-                </td>
-                <td className="border-t border-rule p-2 font-mono font-semibold text-ink">
-                  {fmt(y.endingBalance)}
-                </td>
-                <td className="border-t border-rule p-2 font-mono text-ink-soft">{fmt(y.fullyFundedBalance)}</td>
-                <td
-                  className="border-t border-rule p-2 font-mono font-semibold"
-                  style={{ color: isBelowThreshold ? "#B8863B" : "#3F6B4E" }}
-                >
-                  {y.percentFunded.toFixed(0)}%
-                </td>
-              </tr>
-            );
-          })}
+          {outlook.map((y) => (
+            <tr key={y.year}>
+              <td className="border-t border-rule p-2 font-mono text-ink">{y.year}</td>
+              <td className="border-t border-rule p-2 font-mono text-ink-soft">{fmt(y.startingBalance)}</td>
+              <td className="border-t border-rule p-2 font-mono text-check-green">
+                {y.contributions > 0 ? `+${fmt(y.contributions)}` : "—"}
+              </td>
+              <td className="border-t border-rule p-2 font-mono text-check-green">
+                {y.interestEarned > 0 ? `+${fmt(y.interestEarned)}` : "—"}
+              </td>
+              <td className="border-t border-rule p-2 font-mono text-ink-soft">
+                {y.plannedExpenditures > 0 ? `-${fmt(y.plannedExpenditures)}` : "—"}
+                {y.assetsReplaced.length > 0 && (
+                  <span className="ml-1 text-xs">({y.assetsReplaced.join(", ")})</span>
+                )}
+              </td>
+              <td className="border-t border-rule p-2 font-mono font-semibold text-ink">
+                {fmt(y.endingBalance)}
+              </td>
+              <td className="border-t border-rule p-2 font-mono text-ink-soft">{fmt(y.fullyFundedBalance)}</td>
+              <td
+                className="border-t border-rule p-2 font-mono font-semibold"
+                style={{ color: y.belowThreshold ? "#B8863B" : "#3F6B4E" }}
+              >
+                {y.percentFunded.toFixed(0)}%
+              </td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>

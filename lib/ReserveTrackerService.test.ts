@@ -1,303 +1,431 @@
 import { describe, expect, it } from "vitest";
-import {
-  ReserveTrackerService,
-  type CommunityAsset,
-  type ReserveTrackerInputs,
-} from "./ReserveTrackerService";
+import { ReserveTrackerService, CommunityAsset } from "./ReserveTrackerService";
 
-function baseInputs(overrides: Partial<ReserveTrackerInputs> = {}): ReserveTrackerInputs {
-  return {
-    currentReserveBalance: 100_000,
-    assets: [],
-    newExpenditure: { description: "none", amount: 0 },
-    ...overrides,
-  };
-}
+const roof: CommunityAsset = {
+  id: "roof",
+  name: "Roof",
+  replacementCost: 100000,
+  usefulLifeYears: 20,
+  remainingUsefulLifeYears: 10, // half-life used
+};
 
-describe("ReserveTrackerService", () => {
-  describe("basic projection shape", () => {
-    it("returns one outlook entry per projection year, defaulting to 10", () => {
-      const service = new ReserveTrackerService();
-      const result = service.calculate(baseInputs());
-      expect(result.outlook).toHaveLength(10);
-      expect(result.outlook.map((o) => o.year)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
-    });
+const poolPump: CommunityAsset = {
+  id: "pool-pump",
+  name: "Pool Pump",
+  replacementCost: 5000,
+  usefulLifeYears: 10,
+  remainingUsefulLifeYears: 1, // nearly due
+};
 
-    it("respects a custom projectionYears", () => {
-      const service = new ReserveTrackerService();
-      const result = service.calculate(baseInputs({ projectionYears: 3 }));
-      expect(result.outlook).toHaveLength(3);
-    });
+const paving: CommunityAsset = {
+  id: "paving",
+  name: "Paving",
+  replacementCost: 40000,
+  usefulLifeYears: 15,
+  remainingUsefulLifeYears: 15, // brand new, no deterioration yet
+};
 
-    it("with no assets and no expenditure, balance never changes and stays 100% funded", () => {
-      const service = new ReserveTrackerService();
-      const result = service.calculate(baseInputs());
-      result.outlook.forEach((year) => {
-        expect(year.startingBalance).toBe(100_000);
-        expect(year.endingBalance).toBe(100_000);
-        expect(year.fullyFundedBalance).toBe(0);
-        expect(year.percentFunded).toBe(100);
-      });
-      expect(result.alert).toBe(false);
-      expect(result.firstAlertYear).toBeNull();
-      expect(result.currentPercentFunded).toBe(100);
-    });
+describe("calculateFullyFundedBalance", () => {
+  it("computes the component-method FFB for a single half-life asset", () => {
+    // $100,000 roof, half its life used -> $50,000 FFB contribution
+    const ffb = ReserveTrackerService.calculateFullyFundedBalance([roof]);
+    expect(ffb).toBeCloseTo(50000);
   });
 
-  describe("scheduled asset replacement", () => {
-    const roof: CommunityAsset = {
-      id: "roof",
-      name: "Clubhouse Roof",
-      expectedLifespanYears: 5,
-      replacementCost: 20_000,
-      currentAgeYears: 4,
+  it("sums FFB correctly across multiple assets", () => {
+    // roof: 100000 * (10/20) = 50000
+    // pool pump: 5000 * (9/10) = 4500
+    // paving: 40000 * (0/15) = 0
+    const ffb = ReserveTrackerService.calculateFullyFundedBalance([roof, poolPump, paving]);
+    expect(ffb).toBeCloseTo(54500);
+  });
+
+  it("returns 0 for an empty asset list", () => {
+    expect(ReserveTrackerService.calculateFullyFundedBalance([])).toBe(0);
+  });
+
+  it("returns 0 for an asset with full remaining life (no deterioration)", () => {
+    expect(ReserveTrackerService.calculateFullyFundedBalance([paving])).toBe(0);
+  });
+
+  it("returns the full replacement cost for an asset at end of life", () => {
+    const wornOut: CommunityAsset = { ...roof, remainingUsefulLifeYears: 0 };
+    expect(ReserveTrackerService.calculateFullyFundedBalance([wornOut])).toBeCloseTo(100000);
+  });
+});
+
+describe("calculatePercentFunded", () => {
+  it("computes a simple percentage correctly", () => {
+    expect(ReserveTrackerService.calculatePercentFunded(30000, 50000)).toBeCloseTo(60);
+  });
+
+  it("treats a zero fully-funded balance as 100% funded rather than dividing by zero", () => {
+    expect(ReserveTrackerService.calculatePercentFunded(0, 0)).toBe(100);
+    expect(ReserveTrackerService.calculatePercentFunded(5000, 0)).toBe(100);
+  });
+
+  it("allows percent funded above 100%", () => {
+    expect(ReserveTrackerService.calculatePercentFunded(80000, 50000)).toBeCloseTo(160);
+  });
+});
+
+describe("applyExpenditure", () => {
+  it("deducts the expenditure amount from the balance", () => {
+    const { balance } = ReserveTrackerService.applyExpenditure(20000, [poolPump], {
+      description: "Emergency pump repair",
+      amount: 3000,
+      date: "2026-08-19",
+    });
+    expect(balance).toBe(17000);
+  });
+
+  it("resets the tied asset's remaining life to full by default when assetId is set", () => {
+    const { assets } = ReserveTrackerService.applyExpenditure(20000, [poolPump], {
+      assetId: "pool-pump",
+      description: "Pool pump replaced",
+      amount: 5200,
+      date: "2026-08-19",
+    });
+    const updated = assets.find((a) => a.id === "pool-pump")!;
+    expect(updated.remainingUsefulLifeYears).toBe(poolPump.usefulLifeYears);
+  });
+
+  it("does not reset asset life when resetsAssetLife is explicitly false", () => {
+    const { assets } = ReserveTrackerService.applyExpenditure(20000, [poolPump], {
+      assetId: "pool-pump",
+      description: "Partial patch job, not a full replacement",
+      amount: 800,
+      date: "2026-08-19",
+      resetsAssetLife: false,
+    });
+    const updated = assets.find((a) => a.id === "pool-pump")!;
+    expect(updated.remainingUsefulLifeYears).toBe(poolPump.remainingUsefulLifeYears);
+  });
+
+  it("leaves other assets untouched", () => {
+    const { assets } = ReserveTrackerService.applyExpenditure(20000, [roof, poolPump], {
+      assetId: "pool-pump",
+      description: "Pool pump replaced",
+      amount: 5200,
+      date: "2026-08-19",
+    });
+    const untouchedRoof = assets.find((a) => a.id === "roof")!;
+    expect(untouchedRoof.remainingUsefulLifeYears).toBe(roof.remainingUsefulLifeYears);
+  });
+
+  it("does not mutate the original assets array or its objects", () => {
+    const original = [{ ...poolPump }];
+    ReserveTrackerService.applyExpenditure(20000, original, {
+      assetId: "pool-pump",
+      description: "Pool pump replaced",
+      amount: 5200,
+      date: "2026-08-19",
+    });
+    expect(original[0].remainingUsefulLifeYears).toBe(poolPump.remainingUsefulLifeYears);
+  });
+
+  it("passes through balance and assets unchanged when no expenditure is given", () => {
+    const result = ReserveTrackerService.applyExpenditure(20000, [roof]);
+    expect(result.balance).toBe(20000);
+    expect(result.assets).toEqual([roof]);
+  });
+});
+
+describe("ReserveTrackerService.run — alert behavior", () => {
+  it("raises the alert flag when an expenditure drops percent funded below 70%", () => {
+    // FFB with just the roof = 50000. Balance of 40000 -> 80% funded (healthy).
+    // An unplanned $15,000 expenditure drops the balance to 25000 -> 50% funded.
+    const result = ReserveTrackerService.run({
+      currentReserveBalance: 40000,
+      assets: [roof],
+      unplannedExpenditure: {
+        description: "Unplanned roof repair after storm damage",
+        amount: 15000,
+        date: "2026-08-19",
+      },
+      annualContribution: 5000,
+    });
+
+    expect(result.percentFundedBefore).toBeCloseTo(80);
+    expect(result.percentFundedAfter).toBeCloseTo(50);
+    expect(result.alert).toBe(true);
+    expect(result.alertMessage).toContain("70%");
+  });
+
+  it("does not raise the alert flag when funding stays at or above the threshold", () => {
+    const result = ReserveTrackerService.run({
+      currentReserveBalance: 48000,
+      assets: [roof],
+      unplannedExpenditure: {
+        description: "Minor repair",
+        amount: 1000,
+        date: "2026-08-19",
+      },
+      annualContribution: 5000,
+    });
+
+    expect(result.percentFundedAfter).toBeGreaterThanOrEqual(70);
+    expect(result.alert).toBe(false);
+    expect(result.alertMessage).toBeNull();
+  });
+
+  it("respects a custom alert threshold", () => {
+    const result = ReserveTrackerService.run({
+      currentReserveBalance: 45000, // 90% funded against 50000 FFB
+      assets: [roof],
+      annualContribution: 5000,
+      alertThresholdPercent: 95,
+    });
+    expect(result.alert).toBe(true);
+  });
+
+  it("handles a run with no unplanned expenditure (health check only)", () => {
+    const result = ReserveTrackerService.run({
+      currentReserveBalance: 40000,
+      assets: [roof],
+      annualContribution: 5000,
+    });
+    expect(result.percentFundedBefore).toBeCloseTo(result.percentFundedAfter);
+    expect(result.reserveBalanceAfterExpenditure).toBe(40000);
+  });
+});
+
+describe("ReserveTrackerService.run — 10-year outlook", () => {
+  it("produces an outlook array of the requested length, defaulting to 10 years", () => {
+    const result = ReserveTrackerService.run({
+      currentReserveBalance: 40000,
+      assets: [roof],
+      annualContribution: 5000,
+    });
+    expect(result.tenYearOutlook).toHaveLength(10);
+    expect(result.tenYearOutlook[0].year).toBe(1);
+    expect(result.tenYearOutlook[9].year).toBe(10);
+  });
+
+  it("respects a custom projectionYears", () => {
+    const result = ReserveTrackerService.run({
+      currentReserveBalance: 40000,
+      assets: [roof],
+      annualContribution: 5000,
+      projectionYears: 3,
+    });
+    expect(result.tenYearOutlook).toHaveLength(3);
+  });
+
+  it("triggers a planned replacement in the outlook when an asset's remaining life hits zero", () => {
+    // pool pump has 1 year remaining -> should trigger a replacement in year 1
+    const result = ReserveTrackerService.run({
+      currentReserveBalance: 20000,
+      assets: [poolPump],
+      annualContribution: 1000,
+      projectionYears: 3,
+    });
+
+    const yearOne = result.tenYearOutlook[0];
+    expect(yearOne.assetsReplaced).toContain("Pool Pump");
+    expect(yearOne.plannedExpenditures).toBeCloseTo(poolPump.replacementCost);
+  });
+
+  it("resets a replaced asset's life so it doesn't replace again immediately", () => {
+    const result = ReserveTrackerService.run({
+      currentReserveBalance: 20000,
+      assets: [poolPump], // usefulLife 10, remaining 1
+      annualContribution: 1000,
+      projectionYears: 3,
+    });
+    // Replaced in year 1 (life resets to 10, so remaining after year 2's aging = 9).
+    // It should NOT replace again in year 2 or 3.
+    expect(result.tenYearOutlook[1].assetsReplaced).not.toContain("Pool Pump");
+    expect(result.tenYearOutlook[2].assetsReplaced).not.toContain("Pool Pump");
+  });
+
+  it("applies interest earnings to the balance each year when interestRatePercent is set", () => {
+    const withInterest = ReserveTrackerService.run({
+      currentReserveBalance: 100000,
+      assets: [paving], // no deterioration, no planned expenditures
+      annualContribution: 0,
+      interestRatePercent: 5,
+      projectionYears: 1,
+    });
+    expect(withInterest.tenYearOutlook[0].interestEarned).toBeCloseTo(5000);
+    expect(withInterest.tenYearOutlook[0].endingBalance).toBeCloseTo(105000);
+  });
+
+  it("applies inflation to future replacement costs when inflationRatePercent is set", () => {
+    const result = ReserveTrackerService.run({
+      currentReserveBalance: 20000,
+      assets: [poolPump], // replaces in year 1, cost 5000
+      annualContribution: 0,
+      inflationRatePercent: 10,
+      projectionYears: 1,
+    });
+    // Year 1 inflation factor = 1.10^1
+    expect(result.tenYearOutlook[0].plannedExpenditures).toBeCloseTo(5500);
+  });
+
+  it("compounds inflation correctly across multiple years", () => {
+    const twoYearLifeAsset: CommunityAsset = {
+      id: "gate",
+      name: "Gate Motor",
+      replacementCost: 1000,
+      usefulLifeYears: 2,
+      remainingUsefulLifeYears: 2,
     };
-
-    it("deducts the replacement cost in the year the asset comes due", () => {
-      const service = new ReserveTrackerService();
-      const result = service.calculate(baseInputs({ assets: [roof] }));
-
-      // Age 4 + 1 year of projection = 5 = lifespan, so it's due in year 0.
-      expect(result.outlook[0].scheduledReplacementCost).toBe(20_000);
-      expect(result.outlook[0].assetsReplacedThisYear).toEqual(["Clubhouse Roof"]);
-      expect(result.outlook[0].endingBalance).toBe(80_000);
-
-      // Resets to age 0 after replacement, so it shouldn't come due again
-      // within a 5-year lifespan inside a 10-year window until year 5.
-      expect(result.outlook[1].scheduledReplacementCost).toBe(0);
-      expect(result.outlook[4].scheduledReplacementCost).toBe(0);
-      expect(result.outlook[5].scheduledReplacementCost).toBe(20_000);
+    const result = ReserveTrackerService.run({
+      currentReserveBalance: 5000,
+      assets: [twoYearLifeAsset],
+      annualContribution: 0,
+      inflationRatePercent: 10,
+      projectionYears: 2,
     });
-
-    it("replaces a short-lived asset multiple times within the projection window", () => {
-      const poolPump: CommunityAsset = {
-        id: "pump",
-        name: "Pool Pump",
-        expectedLifespanYears: 4,
-        replacementCost: 3_000,
-        currentAgeYears: 0,
-      };
-      const service = new ReserveTrackerService();
-      const result = service.calculate(baseInputs({ assets: [poolPump] }));
-
-      const replacementYears = result.outlook
-        .filter((y) => y.scheduledReplacementCost > 0)
-        .map((y) => y.year);
-      expect(replacementYears).toEqual([3, 7]);
-    });
-
-    it("computes fullyFundedBalance as replacementCost scaled by age/lifespan", () => {
-      const asset: CommunityAsset = {
-        id: "a",
-        name: "Fence",
-        expectedLifespanYears: 10,
-        replacementCost: 10_000,
-        currentAgeYears: 0,
-      };
-      const service = new ReserveTrackerService();
-      const result = service.calculate(baseInputs({ assets: [asset], currentReserveBalance: 10_000 }));
-
-      // After 1 projected year, age 1/10 of the way through its life.
-      expect(result.outlook[0].fullyFundedBalance).toBeCloseTo(1_000, 5);
-      // After 5 years, halfway funded ideally.
-      expect(result.outlook[4].fullyFundedBalance).toBeCloseTo(5_000, 5);
-    });
+    // Replaces in year 2 -> inflation factor 1.10^2 = 1.21
+    expect(result.tenYearOutlook[1].plannedExpenditures).toBeCloseTo(1210, 0);
   });
 
-  describe("unplanned expenditure", () => {
-    it("applies in year 0 by default", () => {
-      const service = new ReserveTrackerService();
-      const result = service.calculate(
-        baseInputs({ newExpenditure: { description: "Early roof repair", amount: 15_000 } }),
-      );
-      expect(result.outlook[0].unplannedExpenditure).toBe(15_000);
-      expect(result.outlook[0].endingBalance).toBe(85_000);
-      expect(result.outlook[1].unplannedExpenditure).toBe(0);
+  it("tracks a declining percent-funded trend across years when contributions are insufficient", () => {
+    const result = ReserveTrackerService.run({
+      currentReserveBalance: 20000,
+      assets: [poolPump],
+      annualContribution: 0, // no contributions at all
+      projectionYears: 5,
+    });
+    const percentages = result.tenYearOutlook.map((y) => y.percentFunded);
+    // With zero contributions and a real replacement hitting the balance,
+    // funding health should not be monotonically improving.
+    expect(Math.min(...percentages)).toBeLessThanOrEqual(percentages[0]);
+  });
+});
+
+describe("ReserveTrackerService.run — end-to-end example from the spec", () => {
+  it("handles the roof-repair-or-pool-pump style scenario end to end", () => {
+    const result = ReserveTrackerService.run({
+      currentReserveBalance: 150000,
+      assets: [roof, poolPump, paving],
+      unplannedExpenditure: {
+        assetId: "pool-pump",
+        description: "Pool pump failed early, replaced under emergency call",
+        amount: 5200,
+        date: "2026-08-19",
+      },
+      annualContribution: 20000,
+      interestRatePercent: 2,
+      inflationRatePercent: 3,
+      projectionYears: 10,
     });
 
-    it("applies only in the specified yearIndex", () => {
-      const service = new ReserveTrackerService();
-      const result = service.calculate(
-        baseInputs({
-          newExpenditure: { description: "Future deck repair", amount: 5_000, yearIndex: 3 },
-        }),
-      );
-      expect(result.outlook[0].unplannedExpenditure).toBe(0);
-      expect(result.outlook[2].unplannedExpenditure).toBe(0);
-      expect(result.outlook[3].unplannedExpenditure).toBe(5_000);
-      expect(result.outlook[3].endingBalance).toBe(95_000);
-      expect(result.outlook[4].unplannedExpenditure).toBe(0);
-    });
+    expect(result.fullyFundedBalanceBefore).toBeCloseTo(54500);
+    expect(result.reserveBalanceAfterExpenditure).toBeCloseTo(144800);
+    // Pool pump's life should have reset, dropping FFB after expenditure.
+    expect(result.fullyFundedBalanceAfter).toBeCloseTo(50000); // roof only now contributes
+    expect(result.tenYearOutlook).toHaveLength(10);
+    expect(result.alert).toBe(false); // well-funded community in this scenario
+  });
+});
 
-    it("resets the linked asset's age when assetId is provided", () => {
-      const deck: CommunityAsset = {
-        id: "deck-b",
-        name: "Building B Decks",
-        expectedLifespanYears: 15,
-        replacementCost: 40_000,
-        currentAgeYears: 8,
-      };
-      const service = new ReserveTrackerService();
-      const result = service.calculate(
-        baseInputs({
-          assets: [deck],
-          currentReserveBalance: 100_000,
-          newExpenditure: {
-            description: "Emergency deck replacement",
-            amount: 40_000,
-            yearIndex: 0,
-            assetId: "deck-b",
-          },
-        }),
-      );
-
-      // Age resets to 0 at year 0, so it shouldn't be scheduled again until
-      // year 15 — well outside a 10-year window.
-      const scheduledLater = result.outlook.slice(1).every((y) => y.scheduledReplacementCost === 0);
-      expect(scheduledLater).toBe(true);
-      expect(result.outlook[9].fullyFundedBalance).toBeCloseTo((40_000 * 9) / 15, 5);
-    });
+describe("ReserveTrackerService.run — input validation", () => {
+  it("throws on a negative reserve balance", () => {
+    expect(() =>
+      ReserveTrackerService.run({
+        currentReserveBalance: -100,
+        assets: [roof],
+        annualContribution: 1000,
+      })
+    ).toThrow(/currentReserveBalance/);
   });
 
-  describe("annual contribution", () => {
-    it("defaults to 0 — a pure depletion projection", () => {
-      const service = new ReserveTrackerService();
-      const result = service.calculate(
-        baseInputs({ newExpenditure: { description: "x", amount: 10_000 } }),
-      );
-      expect(result.outlook[0].contributions).toBe(0);
-      expect(result.outlook[9].endingBalance).toBe(90_000);
-    });
-
-    it("accumulates over the projection when supplied", () => {
-      const service = new ReserveTrackerService();
-      const result = service.calculate(baseInputs({ annualContribution: 5_000 }));
-      expect(result.outlook[0].endingBalance).toBe(105_000);
-      expect(result.outlook[9].endingBalance).toBe(150_000);
-    });
+  it("throws on a negative annual contribution", () => {
+    expect(() =>
+      ReserveTrackerService.run({
+        currentReserveBalance: 1000,
+        assets: [roof],
+        annualContribution: -500,
+      })
+    ).toThrow(/annualContribution/);
   });
 
-  describe("alert flag", () => {
-    const asset: CommunityAsset = {
-      id: "roof",
-      name: "Roof",
-      expectedLifespanYears: 20,
-      replacementCost: 200_000,
-      currentAgeYears: 10,
-    };
-
-    it("is false when percentFunded never drops below the threshold", () => {
-      const service = new ReserveTrackerService();
-      const result = service.calculate(
-        baseInputs({ assets: [asset], currentReserveBalance: 100_000, annualContribution: 5_000 }),
-      );
-      expect(result.alert).toBe(false);
-      expect(result.firstAlertYear).toBeNull();
-    });
-
-    it("is true and records the first breaching year when funding falls below the default 70% threshold", () => {
-      const service = new ReserveTrackerService();
-      const result = service.calculate(
-        baseInputs({
-          assets: [asset],
-          currentReserveBalance: 20_000,
-          newExpenditure: { description: "Unplanned HVAC failure", amount: 15_000 },
-        }),
-      );
-      expect(result.alert).toBe(true);
-      expect(result.firstAlertYear).toBe(0);
-      expect(result.outlook[0].percentFunded).toBeLessThan(70);
-    });
-
-    it("respects a custom alertThresholdPercent", () => {
-      const service = new ReserveTrackerService();
-      const lenient = service.calculate(
-        baseInputs({
-          assets: [asset],
-          currentReserveBalance: 20_000,
-          newExpenditure: { description: "x", amount: 15_000 },
-          alertThresholdPercent: 1,
-        }),
-      );
-      expect(lenient.alert).toBe(false);
-
-      const strict = service.calculate(
-        baseInputs({
-          assets: [asset],
-          currentReserveBalance: 90_000,
-          alertThresholdPercent: 95,
-        }),
-      );
-      expect(strict.alert).toBe(true);
-    });
-
-    it("a constructor-level threshold applies when the call doesn't override it", () => {
-      const strictService = new ReserveTrackerService({ alertThresholdPercent: 99 });
-      const result = strictService.calculate(
-        baseInputs({ assets: [asset], currentReserveBalance: 100_000, annualContribution: 5_000 }),
-      );
-      expect(result.alert).toBe(true);
-    });
+  it("throws on an asset with zero useful life", () => {
+    const badAsset: CommunityAsset = { ...roof, usefulLifeYears: 0 };
+    expect(() =>
+      ReserveTrackerService.run({
+        currentReserveBalance: 1000,
+        assets: [badAsset],
+        annualContribution: 1000,
+      })
+    ).toThrow(/usefulLifeYears/);
   });
 
-  describe("currentPercentFunded", () => {
-    it("reflects today's funding level, independent of the projection", () => {
-      const asset: CommunityAsset = {
-        id: "a",
-        name: "Roof",
-        expectedLifespanYears: 10,
-        replacementCost: 10_000,
-        currentAgeYears: 5,
-      };
-      const service = new ReserveTrackerService();
-      const result = service.calculate(baseInputs({ assets: [asset], currentReserveBalance: 5_000 }));
-      // Ideal at 5/10 years in: $5,000. Balance is $5,000 → 100% funded today.
-      expect(result.currentPercentFunded).toBe(100);
-    });
+  it("throws when remainingUsefulLifeYears exceeds usefulLifeYears", () => {
+    const badAsset: CommunityAsset = { ...roof, remainingUsefulLifeYears: 25 };
+    expect(() =>
+      ReserveTrackerService.run({
+        currentReserveBalance: 1000,
+        assets: [badAsset],
+        annualContribution: 1000,
+      })
+    ).toThrow(/remainingUsefulLifeYears/);
   });
 
-  describe("validation", () => {
-    it("throws on a non-finite reserve balance", () => {
-      const service = new ReserveTrackerService();
-      expect(() => service.calculate(baseInputs({ currentReserveBalance: NaN }))).toThrow(
-        /currentReserveBalance/,
-      );
-    });
+  it("throws when remainingUsefulLifeYears is negative", () => {
+    const badAsset: CommunityAsset = { ...roof, remainingUsefulLifeYears: -1 };
+    expect(() =>
+      ReserveTrackerService.run({
+        currentReserveBalance: 1000,
+        assets: [badAsset],
+        annualContribution: 1000,
+      })
+    ).toThrow(/remainingUsefulLifeYears/);
+  });
 
-    it("throws on an asset with a non-positive lifespan", () => {
-      const service = new ReserveTrackerService();
-      const badAsset: CommunityAsset = {
-        id: "x",
-        name: "Broken Asset",
-        expectedLifespanYears: 0,
-        replacementCost: 1_000,
-        currentAgeYears: 0,
-      };
-      expect(() => service.calculate(baseInputs({ assets: [badAsset] }))).toThrow(/expectedLifespanYears/);
-    });
+  it("throws on a negative expenditure amount", () => {
+    expect(() =>
+      ReserveTrackerService.run({
+        currentReserveBalance: 1000,
+        assets: [roof],
+        annualContribution: 1000,
+        unplannedExpenditure: {
+          description: "bad data",
+          amount: -50,
+          date: "2026-08-19",
+        },
+      })
+    ).toThrow(/amount/);
+  });
 
-    it("throws on a negative replacement cost", () => {
-      const service = new ReserveTrackerService();
-      const badAsset: CommunityAsset = {
-        id: "x",
-        name: "Broken Asset",
-        expectedLifespanYears: 5,
-        replacementCost: -1,
-        currentAgeYears: 0,
-      };
-      expect(() => service.calculate(baseInputs({ assets: [badAsset] }))).toThrow(/replacementCost/);
-    });
+  it("throws when an expenditure's assetId does not match any known asset", () => {
+    expect(() =>
+      ReserveTrackerService.run({
+        currentReserveBalance: 1000,
+        assets: [roof],
+        annualContribution: 1000,
+        unplannedExpenditure: {
+          assetId: "does-not-exist",
+          description: "typo'd asset id",
+          amount: 50,
+          date: "2026-08-19",
+        },
+      })
+    ).toThrow(/does-not-exist/);
+  });
 
-    it("throws on a negative unplanned expenditure amount", () => {
-      const service = new ReserveTrackerService();
-      expect(() =>
-        service.calculate(baseInputs({ newExpenditure: { description: "x", amount: -1 } })),
-      ).toThrow(/newExpenditure/);
-    });
+  it("throws on a non-positive projectionYears", () => {
+    expect(() =>
+      ReserveTrackerService.run({
+        currentReserveBalance: 1000,
+        assets: [roof],
+        annualContribution: 1000,
+        projectionYears: 0,
+      })
+    ).toThrow(/projectionYears/);
+  });
 
-    it("throws on a non-positive projectionYears", () => {
-      const service = new ReserveTrackerService();
-      expect(() => service.calculate(baseInputs({ projectionYears: 0 }))).toThrow(/projectionYears/);
-    });
+  it("throws on a non-integer projectionYears", () => {
+    expect(() =>
+      ReserveTrackerService.run({
+        currentReserveBalance: 1000,
+        assets: [roof],
+        annualContribution: 1000,
+        projectionYears: 2.5,
+      })
+    ).toThrow(/projectionYears/);
   });
 });

@@ -92,11 +92,16 @@ no-login `/contractor/[token]` and `/vote/[token]` demo links.
 
 ## Tests
 
-`npm test` runs the unit test suite (Vitest). Currently covers `lib/ReserveTrackerService.ts`
-— the reserve-fund projection calculator behind `/reserve` — projecting the balance forward,
-applying scheduled asset replacements and one-off unplanned expenditures, and flagging when
-projected funding drops below a threshold (70% by default — the standard "at risk" line used
-in real reserve studies).
+`npm test` runs the unit test suite (Vitest, 36 cases). Currently covers
+`lib/ReserveTrackerService.ts` — the reserve-fund projection calculator behind `/reserve`.
+Uses the standard reserve-study "component method": each asset's Fully Funded Balance
+contribution is `replacementCost × (elapsedLife / usefulLife)`. `run()` compares percent
+funded before/after a given unplanned expenditure (applied immediately, not scheduled for a
+future year), then projects a configurable number of years forward — aging every asset,
+triggering a scheduled replacement (optionally inflation-adjusted) whenever one hits the end
+of its useful life, and compounding annual contributions plus optional interest — flagging any
+year that drops below a threshold (70% by default, the standard "at risk" line used in real
+reserve studies).
 
 ## How the pieces fit together
 
@@ -141,10 +146,13 @@ in real reserve studies).
   annual contribution, and the community assets being tracked (name, replacement cost,
   expected lifespan, current age); board members see it read-only. `lib/ReserveTrackerService.ts`
   runs entirely client-side against those numbers plus a live, unsaved "what if I had to spend
-  $X in year N" scenario, producing a 10-year table of scheduled replacements, that
-  expenditure, and the resulting percent-funded each year — flagging any year that drops below
-  70%. Nothing about the what-if scenario is persisted; only the balance, contribution, and
-  asset list are.
+  $X right now" scenario (optionally tied to one of the tracked assets, and optionally with
+  interest/inflation rates), showing percent-funded before vs. after that expenditure and then
+  a 10-year table projecting forward from there — flagging any year that drops below 70%.
+  The stored schema tracks each asset's *age*; the service itself works in terms of *remaining
+  life*, so the component converts between the two rather than the schema mirroring the
+  service's field names. Nothing about the what-if scenario is persisted; only the balance,
+  contribution, and asset list are.
 
 ## Deploying
 
