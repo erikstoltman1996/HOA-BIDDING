@@ -6,10 +6,12 @@ database-backed bid comparison ledger, and a board check-in flow that sends real
 
 See `docs/bid-ledger-saas-spec.md` for the full product spec and roadmap, and
 `docs/prototype.html` for the original static prototype this app's design is ported from.
-This app implements Phase 1 (accounts, bid ledger, board check-in) plus two features pulled
-forward from later phases: a contractor weekly-update portal with photos (Phase 3), and
-informal resident voting on community decisions (a new addition beyond the original Phase 4
-read-only page). Still no multi-project dashboard.
+This app implements Phase 1 (accounts, bid ledger, board check-in) plus several features
+pulled forward from later phases or added since: a contractor weekly-update portal with
+photos (Phase 3), informal resident voting on community decisions (a new addition beyond the
+original Phase 4 read-only page), a reserve-fund 10-year outlook calculator, manual HOA dues
+tracking, and a Money & Funding dashboard tying all three together as the home page. Still no
+multi-project dashboard.
 
 ## Stack
 
@@ -28,10 +30,10 @@ read-only page). Still no multi-project dashboard.
 
 ## 2. Set up the database
 
-In your Supabase project, open the SQL editor and run these three files **in order**:
+In your Supabase project, open the SQL editor and run these four files **in order**:
 `supabase/migrations/0001_init.sql`, then `0002_contractor_and_voting.sql`, then
-`0003_reserve_tracker.sql`. (If you use the Supabase CLI instead: `supabase link` then
-`supabase db push`.)
+`0003_reserve_tracker.sql`, then `0004_dues_tracking.sql`. (If you use the Supabase CLI
+instead: `supabase link` then `supabase db push`.)
 
 `0001_init.sql` creates the Phase 1 tables (`organizations`, `users`, `projects`, `line_items`,
 `bids`, `bid_line_item_amounts`, `board_checkins`, `checkin_responses`), row-level security
@@ -47,6 +49,11 @@ migration itself — no separate dashboard step needed).
 `0003_reserve_tracker.sql` adds `reserve_settings` (current balance, planned annual
 contribution — one row per org) and `reserve_assets` (the community assets tracked for the
 10-year outlook on `/reserve`).
+
+`0004_dues_tracking.sql` adds `units` (owner-billed households — separate from `residents`,
+which is about voting access, not billing) and `dues_charges` (one row per unit per calendar
+month, `unpaid` / `paid` / `waived`, with a check constraint requiring a `paid_date` whenever
+status is `paid`). V1 is entirely manual — no Stripe, no online payment collection.
 
 ## 3. Configure auth redirects
 
@@ -81,7 +88,9 @@ cp .env.local.example .env.local
 ```bash
 npm install
 npm run seed   # creates a demo org, admin, two board members, a project, sample bids,
-                # a demo contractor with two weekly updates, three residents, and a poll
+                # a demo contractor with two weekly updates, three residents, a poll,
+                # reserve fund settings + four sample assets, and four dues-paying units
+                # with a realistic paid/unpaid/waived mix for this period and last period
 npm run dev
 ```
 
@@ -93,16 +102,22 @@ no-login `/contractor/[token]` and `/vote/[token]` demo links.
 
 ## Tests
 
-`npm test` runs the unit test suite (Vitest, 36 cases). Currently covers
-`lib/ReserveTrackerService.ts` — the reserve-fund projection calculator behind `/reserve`.
-Uses the standard reserve-study "component method": each asset's Fully Funded Balance
-contribution is `replacementCost × (elapsedLife / usefulLife)`. `run()` compares percent
-funded before/after a given unplanned expenditure (applied immediately, not scheduled for a
-future year), then projects a configurable number of years forward — aging every asset,
-triggering a scheduled replacement (optionally inflation-adjusted) whenever one hits the end
-of its useful life, and compounding annual contributions plus optional interest — flagging any
-year that drops below a threshold (70% by default, the standard "at risk" line used in real
-reserve studies).
+`npm test` runs the unit test suite (Vitest, 50 cases across two files):
+
+- `lib/ReserveTrackerService.ts` (36 cases) — the reserve-fund projection calculator behind
+  `/reserve`. Uses the standard reserve-study "component method": each asset's Fully Funded
+  Balance contribution is `replacementCost × (elapsedLife / usefulLife)`. `run()` compares
+  percent funded before/after a given unplanned expenditure (applied immediately, not
+  scheduled for a future year), then projects a configurable number of years forward — aging
+  every asset, triggering a scheduled replacement (optionally inflation-adjusted) whenever one
+  hits the end of its useful life, and compounding annual contributions plus optional interest
+  — flagging any year that drops below a threshold (70% by default).
+- `lib/dues.ts` (14 cases) — period-key math (including year-boundary rollover) and
+  `calculateCollectionRate`, which is `paid / (paid + unpaid)` with **waived charges excluded
+  from both the numerator and denominator** — a waiver never makes the collection rate look
+  better than it is.
+
+Both use the same green/gold/red health-band thresholds (70% / 30%) via `lib/healthBand.ts`.
 
 ## How the pieces fit together
 
@@ -112,16 +127,20 @@ reserve studies).
   project page (`auth.admin.inviteUserByEmail`, server-only via the service-role key) and are
   linked into the org automatically when their invite is created. Login, signup, and the auth
   callback all land on `/` by default afterward.
-- **Home** (`app/page.tsx`) — the landing page after login: an HOA-portal-style dashboard with
-  a card for each destination (Bid Ledger, Community Decisions, Reserve Fund), each showing a
-  quick at-a-glance stat pulled live (bid count and latest check-in reply tally; resident count
-  and open poll count; today's reserve percent-funded, flagged gold if under 70%) so admins and
-  board members can tell what needs attention without opening each section.
+- **Home — Money & Funding dashboard** (`app/page.tsx`) — the landing page after login,
+  built around the three things a board actually manages money for: projects, reserves, and
+  dues. Top row: three big, color-banded stat tiles (reserve percent-funded, this period's dues
+  collection rate, active project count) using the same green/gold/red thresholds as `/reserve`.
+  Below: a condensed Reserves summary linking to the full outlook, a Projects card linking into
+  the bid ledger (currently always at most one, since Phase 1's schema still enforces one
+  project per org), and a live Dues section — the real table, not a summary, so an admin can
+  mark a charge paid right from the dashboard. Community Decisions isn't part of this dashboard
+  (it isn't a money feature) but stays one click away via `SectionNav`.
 - **Shared chrome** — `components/AppHeader.tsx` (logo linking home, org name, current section,
   user info, sign out) and `components/SectionNav.tsx` (tabs between Bid Ledger / Community /
-  Reserve Fund) are used on every logged-in page for a consistent header and lateral navigation,
-  instead of each page rolling its own. `components/Logo.tsx` is the small navy/gold monogram
-  mark, reused at a larger size as `app/icon.svg` for the favicon.
+  Reserve Fund / Dues) are used on every logged-in page for a consistent header and lateral
+  navigation, instead of each page rolling its own. `components/Logo.tsx` is the small
+  navy/gold monogram mark, reused at a larger size as `app/icon.svg` for the favicon.
 - **Bid ledger** — `app/project/page.tsx` loads the org's one Phase-1 project, its shared
   line items, its bids, and each bid's per-line-item amounts, then renders
   `BidLedgerClient`, which mirrors the prototype's UI and table exactly. Edits call Server
@@ -165,6 +184,19 @@ reserve studies).
   life*, so the component converts between the two rather than the schema mirroring the
   service's field names. Nothing about the what-if scenario is persisted; only the balance,
   contribution, and asset list are.
+- **Dues tracking** (`/dues`) — V1 is deliberately manual: no Stripe, no online payment
+  collection. An admin maintains a `units` roster (label, owner, monthly amount) and clicks
+  "Generate this period's charges" to create one `dues_charges` row per unit at that unit's
+  rate — idempotent, so re-clicking or adding a unit mid-month never duplicates a charge
+  (enforced by a `unique (unit_id, period)` constraint, not just app logic). Admins mark each
+  charge paid, unpaid, or waived (e.g. a hardship case, or a unit the HOA itself owns); board
+  members see the same table read-only. The period navigator (`lib/dues.ts`) steps by calendar
+  month. `components/dues/DuesTable.tsx` is shared verbatim between `/dues` and the dashboard's
+  live current-period table — sorted unpaid-first, since that's what needs attention — and
+  `lib/duesData.ts` holds the units+charges merge query both pages call, so that logic exists
+  in exactly one place. The collection-rate stat is `paid / (paid + unpaid)`, with waived
+  charges excluded from both sides of that fraction on purpose, so a waiver can't make the rate
+  look better than it is.
 
 ## Deploying
 

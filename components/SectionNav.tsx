@@ -4,6 +4,7 @@ const SECTIONS = [
   { href: "/project", label: "Bid Ledger" },
   { href: "/community", label: "Community" },
   { href: "/reserve", label: "Reserve Fund" },
+  { href: "/dues", label: "Dues" },
 ];
 
 export function SectionNav({ current }: { current: string }) {

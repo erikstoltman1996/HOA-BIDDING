@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { fmt } from "@/lib/money";
+import { healthBandColor } from "@/lib/healthBand";
 import { Plus, X } from "@/components/bid-ledger/icons";
 
 export interface ReserveAssetRow {
@@ -147,7 +148,10 @@ export function ReserveTrackerPanel({
         </div>
         <div>
           <div className="mb-1 text-xs font-medium text-ink-soft">Funded today</div>
-          <p className="font-mono text-ink">
+          <p
+            className="font-mono font-semibold"
+            style={{ color: result ? healthBandColor(result.percentFundedBefore) : "#1F2B3D" }}
+          >
             {result ? `${result.percentFundedBefore.toFixed(0)}%` : "—"}
           </p>
         </div>
@@ -233,9 +237,12 @@ export function ReserveTrackerPanel({
 
       {result && Number(expAmount) > 0 && (
         <div className="mb-4 rounded border border-rule bg-paper-card shadow-card p-3 text-sm text-ink">
-          Before: <span className="font-mono">{result.percentFundedBefore.toFixed(0)}%</span> funded
-          → After this expenditure:{" "}
-          <span className="font-mono font-semibold" style={{ color: result.alert ? "#B8863B" : "#3F6B4E" }}>
+          Before:{" "}
+          <span className="font-mono font-semibold" style={{ color: healthBandColor(result.percentFundedBefore) }}>
+            {result.percentFundedBefore.toFixed(0)}%
+          </span>{" "}
+          funded → After this expenditure:{" "}
+          <span className="font-mono font-semibold" style={{ color: healthBandColor(result.percentFundedAfter) }}>
             {result.percentFundedAfter.toFixed(0)}%
           </span>{" "}
           funded
@@ -395,7 +402,7 @@ function OutlookTable({ outlook }: { outlook: YearProjection[] }) {
               <td className="border-t border-rule p-2 font-mono text-ink-soft">{fmt(y.fullyFundedBalance)}</td>
               <td
                 className="border-t border-rule p-2 font-mono font-semibold"
-                style={{ color: y.belowThreshold ? "#B8863B" : "#3F6B4E" }}
+                style={{ color: healthBandColor(y.percentFunded) }}
               >
                 {y.percentFunded.toFixed(0)}%
               </td>

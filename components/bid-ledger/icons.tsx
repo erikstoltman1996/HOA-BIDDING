@@ -17,4 +17,8 @@ export {
   ArrowRight,
   ClipboardList,
   Vote,
+  AlertCircle,
+  MinusCircle,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";

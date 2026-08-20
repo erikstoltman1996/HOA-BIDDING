@@ -8,6 +8,7 @@
  * Requires NEXT_PUBLIC_SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY in .env.local.
  */
 import { createClient } from "@supabase/supabase-js";
+import { currentPeriod, shiftPeriod } from "../lib/dues";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -317,6 +318,50 @@ async function main() {
       { org_id: orgId, name: "Building B Decks", expected_lifespan_years: 15, replacement_cost: 40_000, current_age_years: 13 },
       { org_id: orgId, name: "Clubhouse HVAC", expected_lifespan_years: 12, replacement_cost: 25_000, current_age_years: 4 },
     ]);
+  }
+
+  const { data: existingUnits } = await admin.from("units").select("*").eq("org_id", orgId);
+  let units = existingUnits ?? [];
+  if (units.length === 0) {
+    const { data: inserted, error } = await admin
+      .from("units")
+      .insert([
+        { org_id: orgId, label: "Building A, Unit 1", owner_name: "Dana Ruiz", owner_email: "dana@demo.bidledger.app", monthly_dues_amount: 350 },
+        { org_id: orgId, label: "Building A, Unit 2", owner_name: "Marcus Lee", owner_email: "marcus@demo.bidledger.app", monthly_dues_amount: 350 },
+        { org_id: orgId, label: "Building B, Unit 1", owner_name: "Priya Nair", owner_email: "priya@demo.bidledger.app", monthly_dues_amount: 400 },
+        { org_id: orgId, label: "Building B, Unit 2", owner_name: "HOA-owned (community room)", owner_email: null, monthly_dues_amount: 400 },
+      ])
+      .select();
+    if (error) throw error;
+    units = inserted;
+  }
+
+  const { data: existingCharges } = await admin.from("dues_charges").select("id").limit(1);
+  if (!existingCharges || existingCharges.length === 0) {
+    const thisPeriod = currentPeriod();
+    const lastPeriod = shiftPeriod(thisPeriod, -1);
+
+    // This period: a realistic in-progress mix — two paid, one still
+    // outstanding, one waived (the HOA-owned unit) so the dashboard's
+    // collection-rate exclusion rule has something real to show.
+    await admin.from("dues_charges").insert([
+      { unit_id: units[0].id, period: thisPeriod, amount_due: units[0].monthly_dues_amount, status: "paid", paid_date: thisPeriod },
+      { unit_id: units[1].id, period: thisPeriod, amount_due: units[1].monthly_dues_amount, status: "unpaid" },
+      { unit_id: units[2].id, period: thisPeriod, amount_due: units[2].monthly_dues_amount, status: "paid", paid_date: thisPeriod },
+      { unit_id: units[3].id, period: thisPeriod, amount_due: units[3].monthly_dues_amount, status: "waived" },
+    ]);
+
+    // Last period: fully collected, so the period navigator on /dues has
+    // somewhere to go and shows a different (better) rate than the current one.
+    await admin.from("dues_charges").insert(
+      units.map((u) => ({
+        unit_id: u.id,
+        period: lastPeriod,
+        amount_due: u.monthly_dues_amount,
+        status: "paid" as const,
+        paid_date: lastPeriod,
+      })),
+    );
   }
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";

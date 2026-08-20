@@ -12,6 +12,7 @@ export type ProjectStatus = "bidding" | "awarded" | "in_progress" | "complete";
 export type BidStatus = "submitted" | "awarded" | "rejected";
 export type TimelineStatus = "on_track" | "ahead" | "delayed";
 export type PollStatus = "open" | "closed";
+export type DuesChargeStatus = "unpaid" | "paid" | "waived";
 
 export interface Database {
   public: {
@@ -360,6 +361,50 @@ export interface Database {
           created_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["reserve_assets"]["Insert"]>;
+        Relationships: [];
+      };
+      units: {
+        Row: {
+          id: string;
+          org_id: string;
+          label: string;
+          owner_name: string;
+          owner_email: string | null;
+          monthly_dues_amount: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          label?: string;
+          owner_name?: string;
+          owner_email?: string | null;
+          monthly_dues_amount?: number;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["units"]["Insert"]>;
+        Relationships: [];
+      };
+      dues_charges: {
+        Row: {
+          id: string;
+          unit_id: string;
+          period: string;
+          amount_due: number;
+          paid_date: string | null;
+          status: DuesChargeStatus;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          unit_id: string;
+          period: string;
+          amount_due: number;
+          paid_date?: string | null;
+          status?: DuesChargeStatus;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["dues_charges"]["Insert"]>;
         Relationships: [];
       };
     };
