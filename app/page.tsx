@@ -12,6 +12,7 @@ import { ArrowRight, ClipboardList } from "@/components/bid-ledger/icons";
 import type { Database } from "@/types/database";
 
 type TimelineStatus = Database["public"]["Tables"]["weekly_updates"]["Row"]["timeline_status"];
+type ProjectStatus = Database["public"]["Tables"]["projects"]["Row"]["status"];
 
 const STATUS_LABEL: Record<TimelineStatus, string> = {
   on_track: "On track",
@@ -23,6 +24,24 @@ const STATUS_COLOR: Record<TimelineStatus, string> = {
   on_track: "#3F6B4E",
   ahead: "#3F6B4E",
   delayed: "#B8863B",
+};
+
+// Small, precise status dots for the project card — Linear's restraint, not
+// a loud colored badge. Reuses the existing palette: gray for "not started
+// yet," gold for "underway" (both awarded and in_progress read as active
+// work to a board member glancing at the card), green for done.
+const PROJECT_STATUS_LABEL: Record<ProjectStatus, string> = {
+  bidding: "Bidding",
+  awarded: "Awarded",
+  in_progress: "In progress",
+  complete: "Complete",
+};
+
+const PROJECT_STATUS_COLOR: Record<ProjectStatus, string> = {
+  bidding: "#5B6578", // ink-soft
+  awarded: "#B8863B", // gold
+  in_progress: "#B8863B", // gold
+  complete: "#3F6B4E", // check-green
 };
 
 export default async function HomePage() {
@@ -57,6 +76,7 @@ export default async function HomePage() {
   ]);
 
   let bidCount = 0;
+  let bidRange: { min: number; max: number } | null = null;
   let latestCheckin: { responded: number; total: number } | null = null;
   let latestUpdate: {
     contractorName: string;
@@ -69,18 +89,38 @@ export default async function HomePage() {
   let hasContractors = false;
 
   if (project) {
-    const [{ count }, { data: checkinsRaw }, { data: contractors }] = await Promise.all([
-      supabase.from("bids").select("id", { count: "exact", head: true }).eq("project_id", project.id),
-      supabase
-        .from("board_checkins")
-        .select("id")
-        .eq("project_id", project.id)
-        .order("created_at", { ascending: false })
-        .limit(1),
-      supabase.from("contractors").select("id, name").eq("project_id", project.id),
-    ]);
-    bidCount = count ?? 0;
+    const [{ data: bidsRaw }, { data: lineItemsRaw }, { data: checkinsRaw }, { data: contractors }] =
+      await Promise.all([
+        supabase.from("bids").select("id").eq("project_id", project.id),
+        supabase.from("line_items").select("id").eq("project_id", project.id),
+        supabase
+          .from("board_checkins")
+          .select("id")
+          .eq("project_id", project.id)
+          .order("created_at", { ascending: false })
+          .limit(1),
+        supabase.from("contractors").select("id, name").eq("project_id", project.id),
+      ]);
+    bidCount = (bidsRaw ?? []).length;
     hasContractors = (contractors ?? []).length > 0;
+
+    const bidIds = (bidsRaw ?? []).map((b) => b.id);
+    const lineItemIds = new Set((lineItemsRaw ?? []).map((li) => li.id));
+    if (bidIds.length > 0 && lineItemIds.size > 0) {
+      const { data: amountsRaw } = await supabase
+        .from("bid_line_item_amounts")
+        .select("bid_id, line_item_id, amount")
+        .in("bid_id", bidIds);
+      const totalsByBid = new Map<string, number>();
+      for (const a of amountsRaw ?? []) {
+        if (!lineItemIds.has(a.line_item_id) || a.amount === null) continue;
+        totalsByBid.set(a.bid_id, (totalsByBid.get(a.bid_id) ?? 0) + a.amount);
+      }
+      const validTotals = [...totalsByBid.values()];
+      if (validTotals.length > 0) {
+        bidRange = { min: Math.min(...validTotals), max: Math.max(...validTotals) };
+      }
+    }
 
     if (checkinsRaw && checkinsRaw.length > 0) {
       const { data: responses } = await supabase
@@ -241,14 +281,32 @@ export default async function HomePage() {
                 className="group flex flex-col rounded-lg border border-rule bg-paper-card p-5 shadow-card transition-all duration-150 hover:-translate-y-0.5 hover:border-gold hover:shadow-card-hover"
               >
                 <div className="mb-1 flex items-center justify-between">
-                  <span className="font-serif text-lg text-ink">{project.title || "Untitled project"}</span>
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span
+                      className="h-2 w-2 shrink-0 rounded-full"
+                      style={{ background: PROJECT_STATUS_COLOR[project.status] }}
+                      aria-hidden
+                    />
+                    <span className="truncate font-serif text-lg text-ink">
+                      {project.title || "Untitled project"}
+                    </span>
+                    <span className="shrink-0 text-xs font-medium text-ink-soft">
+                      {PROJECT_STATUS_LABEL[project.status]}
+                    </span>
+                  </span>
                   <ArrowRight
                     size={16}
-                    className="text-ink-soft transition-transform group-hover:translate-x-0.5 group-hover:text-gold"
+                    className="shrink-0 text-ink-soft transition-transform group-hover:translate-x-0.5 group-hover:text-gold"
                   />
                 </div>
                 <p className="text-xs text-ink-soft">
-                  Status: {project.status.replace("_", " ")} · {bidCount} bid{bidCount === 1 ? "" : "s"}
+                  {bidCount === 0
+                    ? "No bids yet"
+                    : bidRange
+                      ? bidRange.min === bidRange.max
+                        ? `${fmt(bidRange.min)} · ${bidCount} bid${bidCount === 1 ? "" : "s"}`
+                        : `${fmt(bidRange.min)}–${fmt(bidRange.max)} · ${bidCount} bids`
+                      : `${bidCount} bid${bidCount === 1 ? "" : "s"} · amounts not entered yet`}
                   {latestCheckin
                     ? ` · ${latestCheckin.responded} of ${latestCheckin.total} replied to latest check-in`
                     : ""}
