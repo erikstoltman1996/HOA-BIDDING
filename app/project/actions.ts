@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { requireAdmin, requireUser } from "@/lib/auth";
 import { sendCheckinEmail, sendContractorInviteEmail } from "@/lib/email/resend";
@@ -19,6 +20,26 @@ export async function updateProjectTitle(projectId: string, title: string) {
   const supabase = await createClient();
   const { error } = await supabase.from("projects").update({ title }).eq("id", projectId);
   if (error) throw new Error(error.message);
+  // The title shows up on the /projects list and the Home dashboard too,
+  // not just this project's own page.
+  revalidatePath("/projects");
+  revalidatePath("/");
+}
+
+/** Admin-only. Creates a new project for their org and redirects straight
+ *  into it — the natural next step after creating one is filling it in. */
+export async function createProject() {
+  const admin = await requireAdmin();
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("projects")
+    .insert({ org_id: admin.org_id! })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  revalidatePath("/projects");
+  revalidatePath("/");
+  redirect(`/project/${data.id}`);
 }
 
 // --- Line items ---------------------------------------------------------
@@ -32,7 +53,7 @@ export async function addLineItem(projectId: string, sortOrder: number) {
     .select()
     .single();
   if (error) throw new Error(error.message);
-  revalidatePath("/project");
+  revalidatePath("/project/[id]", "page");
   return data;
 }
 
@@ -41,7 +62,7 @@ export async function removeLineItem(itemId: string) {
   const supabase = await createClient();
   const { error } = await supabase.from("line_items").delete().eq("id", itemId);
   if (error) throw new Error(error.message);
-  revalidatePath("/project");
+  revalidatePath("/project/[id]", "page");
 }
 
 export async function updateLineItemLabel(itemId: string, label: string) {
@@ -62,7 +83,7 @@ export async function addBid(projectId: string) {
     .select()
     .single();
   if (error) throw new Error(error.message);
-  revalidatePath("/project");
+  revalidatePath("/project/[id]", "page");
   return data;
 }
 
@@ -71,7 +92,7 @@ export async function removeBid(bidId: string) {
   const supabase = await createClient();
   const { error } = await supabase.from("bids").delete().eq("id", bidId);
   if (error) throw new Error(error.message);
-  revalidatePath("/project");
+  revalidatePath("/project/[id]", "page");
 }
 
 type BidField = "vendor_name" | "vendor_contact" | "warranty_years" | "timeline_weeks" | "notes";
@@ -131,7 +152,7 @@ export async function inviteBoardMember(name: string, email: string) {
   });
   if (insertError) throw new Error(insertError.message);
 
-  revalidatePath("/project");
+  revalidatePath("/project/[id]", "page");
 }
 
 export async function removeBoardMember(userId: string) {
@@ -143,7 +164,7 @@ export async function removeBoardMember(userId: string) {
     .eq("id", userId)
     .eq("org_id", admin.org_id!);
   if (error) throw new Error(error.message);
-  revalidatePath("/project");
+  revalidatePath("/project/[id]", "page");
 }
 
 // --- Board check-in -----------------------------------------------------
@@ -223,7 +244,7 @@ export async function sendBoardCheckin(
     ),
   );
 
-  revalidatePath("/project");
+  revalidatePath("/project/[id]", "page");
 }
 
 export async function resendCheckinReminders(checkinId: string) {
@@ -325,7 +346,7 @@ export async function addContractor(
     });
   }
 
-  revalidatePath("/project");
+  revalidatePath("/project/[id]", "page");
 }
 
 export async function removeContractor(contractorId: string) {
@@ -333,7 +354,7 @@ export async function removeContractor(contractorId: string) {
   const supabase = await createClient();
   const { error } = await supabase.from("contractors").delete().eq("id", contractorId);
   if (error) throw new Error(error.message);
-  revalidatePath("/project");
+  revalidatePath("/project/[id]", "page");
 }
 
 export async function sendContractorReminder(contractorId: string) {

@@ -1,8 +1,9 @@
 # Bid Ledger
 
 A tool for HOA boards to compare contractor bids on capital projects and gather informal
-board input before a vote. Phase 1: real accounts, one project per organization, a
-database-backed bid comparison ledger, and a board check-in flow that sends real email.
+board input before a vote. Phase 1: real accounts, a database-backed bid comparison ledger,
+and a board check-in flow that sends real email. Multi-project support (an org can run more
+than one capital project, past or current) was added in Phase 2.
 
 See `docs/bid-ledger-saas-spec.md` for the full product spec and roadmap, and
 `docs/prototype.html` for the original static prototype this app's design is ported from.
@@ -30,10 +31,10 @@ multi-project dashboard.
 
 ## 2. Set up the database
 
-In your Supabase project, open the SQL editor and run these four files **in order**:
+In your Supabase project, open the SQL editor and run these five files **in order**:
 `supabase/migrations/0001_init.sql`, then `0002_contractor_and_voting.sql`, then
-`0003_reserve_tracker.sql`, then `0004_dues_tracking.sql`. (If you use the Supabase CLI
-instead: `supabase link` then `supabase db push`.)
+`0003_reserve_tracker.sql`, then `0004_dues_tracking.sql`, then `0005_multi_project.sql`.
+(If you use the Supabase CLI instead: `supabase link` then `supabase db push`.)
 
 `0001_init.sql` creates the Phase 1 tables (`organizations`, `users`, `projects`, `line_items`,
 `bids`, `bid_line_item_amounts`, `board_checkins`, `checkin_responses`), row-level security
@@ -54,6 +55,13 @@ contribution — one row per org) and `reserve_assets` (the community assets tra
 which is about voting access, not billing) and `dues_charges` (one row per unit per calendar
 month, `unpaid` / `paid` / `waived`, with a check constraint requiring a `paid_date` whenever
 status is `paid`). V1 is entirely manual — no Stripe, no online payment collection.
+
+`0005_multi_project.sql` drops the Phase-1-only unique constraint that limited an org to
+exactly one project. Every other project-scoped table (`line_items`, `bids`,
+`board_checkins`, `contractors`, `weekly_updates`) already keyed off `project_id` with RLS
+already scoped to "any project in my org," so this was the only schema change multi-project
+support needed — the rest was routing (`/project/[id]` instead of a fixed `/project`) and a
+new `/projects` list page.
 
 ## 3. Configure auth redirects
 
@@ -141,11 +149,13 @@ Both use the same green/gold/red health-band thresholds (70% / 30%) via `lib/hea
   Reserve Fund / Dues) are used on every logged-in page for a consistent header and lateral
   navigation, instead of each page rolling its own. `components/Logo.tsx` is the small
   navy/gold monogram mark, reused at a larger size as `app/icon.svg` for the favicon.
-- **Bid ledger** — `app/project/page.tsx` loads the org's one Phase-1 project, its shared
-  line items, its bids, and each bid's per-line-item amounts, then renders
-  `BidLedgerClient`, which mirrors the prototype's UI and table exactly. Edits call Server
-  Actions in `app/project/actions.ts`, debounced client-side so typing stays smooth. Board
-  members see the same ledger read-only; only admins can edit.
+- **Bid ledger** — `/projects` lists every project in the org as a status-dotted card
+  (bidding/awarded/in-progress/complete, plus a live bid range); admins get a "New project"
+  button there. `app/project/[id]/page.tsx` loads one specific project — its shared line
+  items, its bids, and each bid's per-line-item amounts — then renders `BidLedgerClient`,
+  which mirrors the prototype's UI and table exactly. Edits call Server Actions in
+  `app/project/actions.ts`, debounced client-side so typing stays smooth. Board members see
+  the same ledger read-only; only admins can edit or create projects.
 - **Board check-in** — An admin picks board members and an optional response-by date and
   sends a check-in. This creates one `checkin_responses` row per recipient (each with its own
   random token) and emails each one a personal link via Resend (`lib/email/resend.ts`,
@@ -162,7 +172,8 @@ Both use the same green/gold/red health-band thresholds (70% / 30%) via `lib/hea
   (`app/contractor/[token]/actions.ts`) that validates the token and writes with the
   service-role client — contractors never get a Supabase Auth session or a table grant.
   Photos upload to a public Supabase Storage bucket; only the URL is ever exposed. The
-  timeline and roster on `/project` are board-only — residents never see any of this.
+  timeline and roster on a project's ledger page are board-only — residents never see any
+  of this.
 - **Resident voting** — org-scoped, not tied to a project, since residents live in the HOA
   regardless of which capital project is active. An admin manages a `residents` list
   (`/community`, each with a stable per-unit link, emailed via `emails/ResidentInviteEmail.tsx`
@@ -197,6 +208,10 @@ Both use the same green/gold/red health-band thresholds (70% / 30%) via `lib/hea
   in exactly one place. The collection-rate stat is `paid / (paid + unpaid)`, with waived
   charges excluded from both sides of that fraction on purpose, so a waiver can't make the rate
   look better than it is.
+- **CSV export** — the bid ledger, the reserve 10-year outlook, and a dues period each have an
+  "Export CSV" button (`components/ExportCsvButton.tsx`, `lib/csv.ts` — a small RFC 4180
+  builder, no dependency needed for something this size). Available to any org member, the
+  same access level as viewing the page — this is read-only, not an admin action.
 
 ## Deploying
 

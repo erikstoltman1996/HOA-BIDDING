@@ -93,7 +93,12 @@ async function main() {
     boardMemberIds.push(user.id);
   }
 
-  let { data: project } = await admin.from("projects").select("*").eq("org_id", orgId).maybeSingle();
+  let { data: project } = await admin
+    .from("projects")
+    .select("*")
+    .eq("org_id", orgId)
+    .eq("title", "Roof Replacement — 33 W Elmhurst Ave")
+    .maybeSingle();
   if (!project) {
     const { data: created, error } = await admin
       .from("projects")
@@ -106,6 +111,24 @@ async function main() {
       .single();
     if (error) throw error;
     project = created;
+  }
+
+  // A second, already-finished project — matched by title (not maybeSingle
+  // on org_id alone, which would now throw once an org has more than one
+  // project) — so /projects has something real to list, not just one card.
+  const { data: pastProject } = await admin
+    .from("projects")
+    .select("*")
+    .eq("org_id", orgId)
+    .eq("title", "Clubhouse HVAC Replacement (2025)")
+    .maybeSingle();
+  if (!pastProject) {
+    const { error } = await admin.from("projects").insert({
+      org_id: orgId,
+      title: "Clubhouse HVAC Replacement (2025)",
+      status: "complete",
+    });
+    if (error) throw error;
   }
 
   const { data: existingItems } = await admin

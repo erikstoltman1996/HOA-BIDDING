@@ -7,9 +7,10 @@ import { CheckinPanel, type CheckinRow } from "@/components/checkin/CheckinPanel
 import { ContractorPanel, type WeeklyUpdateRow } from "@/components/contractor/ContractorPanel";
 import { AppHeader } from "@/components/AppHeader";
 import { SectionNav } from "@/components/SectionNav";
-import { exportBidComparisonCsv } from "./actions";
+import { exportBidComparisonCsv } from "@/app/project/actions";
 
-export default async function ProjectPage() {
+export default async function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id: projectIdParam } = await params;
   const { authUser, profile } = await requireUser();
   const supabase = await createClient();
 
@@ -32,13 +33,22 @@ export default async function ProjectPage() {
 
   const [{ data: org }, { data: project }] = await Promise.all([
     supabase.from("organizations").select("*").eq("id", profile.org_id).single(),
-    supabase.from("projects").select("*").eq("org_id", profile.org_id).single(),
+    supabase.from("projects").select("*").eq("id", projectIdParam).eq("org_id", profile.org_id).maybeSingle(),
   ]);
 
   if (!project) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-paper p-8 text-center">
-        <p className="text-sm text-ink-soft">No project set up for {org?.name ?? "your organization"} yet.</p>
+        <div>
+          <p className="mb-2 font-serif text-xl text-ink">Project not found</p>
+          <p className="text-sm text-ink-soft">
+            It may have been removed, or the link is for a different organization.{" "}
+            <Link href="/projects" className="underline hover:text-ink">
+              View all projects
+            </Link>
+            .
+          </p>
+        </div>
       </div>
     );
   }
@@ -178,7 +188,11 @@ export default async function ProjectPage() {
         section="Bid Ledger"
       />
       <div className="mx-auto max-w-5xl p-4 sm:p-8">
-        <SectionNav current="/project" />
+        <SectionNav current="/projects" />
+
+        <Link href="/projects" className="mb-4 inline-block text-xs text-ink-soft underline hover:text-ink">
+          ← All projects
+        </Link>
 
         {/* Jump links — the page below is three distinct sections stacked
             (bid comparison, board check-in, contractor updates); this lets

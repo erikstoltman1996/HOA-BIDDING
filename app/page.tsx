@@ -8,11 +8,13 @@ import { fmt } from "@/lib/money";
 import { DUES_COLLECTION_THRESHOLDS, healthBandColor } from "@/lib/healthBand";
 import { AppHeader } from "@/components/AppHeader";
 import { DuesTable } from "@/components/dues/DuesTable";
+import { NewProjectButton } from "@/components/project/NewProjectButton";
+import { computeBidSummary, formatBidSummary } from "@/lib/projectSummary";
+import { PROJECT_STATUS_COLOR, PROJECT_STATUS_LABEL } from "@/lib/projectStatus";
 import { ArrowRight, ClipboardList } from "@/components/bid-ledger/icons";
 import type { Database } from "@/types/database";
 
 type TimelineStatus = Database["public"]["Tables"]["weekly_updates"]["Row"]["timeline_status"];
-type ProjectStatus = Database["public"]["Tables"]["projects"]["Row"]["status"];
 
 const STATUS_LABEL: Record<TimelineStatus, string> = {
   on_track: "On track",
@@ -25,24 +27,6 @@ const STATUS_COLOR: Record<TimelineStatus, string> = {
   ahead: "#3F6B4E",
   // Gold darkened for text — see --color-gold-text in globals.css.
   delayed: "#83602A",
-};
-
-// Small, precise status dots for the project card — Linear's restraint, not
-// a loud colored badge. Reuses the existing palette: gray for "not started
-// yet," gold for "underway" (both awarded and in_progress read as active
-// work to a board member glancing at the card), green for done.
-const PROJECT_STATUS_LABEL: Record<ProjectStatus, string> = {
-  bidding: "Bidding",
-  awarded: "Awarded",
-  in_progress: "In progress",
-  complete: "Complete",
-};
-
-const PROJECT_STATUS_COLOR: Record<ProjectStatus, string> = {
-  bidding: "#5B6578", // ink-soft
-  awarded: "#B8863B", // gold
-  in_progress: "#B8863B", // gold
-  complete: "#3F6B4E", // check-green
 };
 
 export default async function HomePage() {
@@ -69,15 +53,27 @@ export default async function HomePage() {
   const isAdmin = profile.role === "admin";
   const period = currentPeriod();
 
-  const [{ data: org }, { data: project }, { data: settings }, { units, charges }] = await Promise.all([
+  const [{ data: org }, { data: projectsRaw }, { data: settings }, { units, charges }] = await Promise.all([
     supabase.from("organizations").select("*").eq("id", profile.org_id).single(),
-    supabase.from("projects").select("*").eq("org_id", profile.org_id).maybeSingle(),
+    supabase
+      .from("projects")
+      .select("*")
+      .eq("org_id", profile.org_id)
+      .order("created_at", { ascending: false }),
     supabase.from("reserve_settings").select("*").eq("org_id", profile.org_id).maybeSingle(),
     fetchDuesChargesForPeriod(supabase, profile.org_id, period),
   ]);
 
-  let bidCount = 0;
-  let bidRange: { min: number; max: number } | null = null;
+  const projects = projectsRaw ?? [];
+  // The most recently started project that isn't finished yet — the one a
+  // board member most likely opened this dashboard to check on. Falls back
+  // to the most recent project overall if every project is complete.
+  const project = projects.find((p) => p.status !== "complete") ?? projects[0] ?? null;
+
+  let bidSummary: { bidCount: number; bidRange: { min: number; max: number } | null } = {
+    bidCount: 0,
+    bidRange: null,
+  };
   let latestCheckin: { responded: number; total: number } | null = null;
   let latestUpdate: {
     contractorName: string;
@@ -90,38 +86,18 @@ export default async function HomePage() {
   let hasContractors = false;
 
   if (project) {
-    const [{ data: bidsRaw }, { data: lineItemsRaw }, { data: checkinsRaw }, { data: contractors }] =
-      await Promise.all([
-        supabase.from("bids").select("id").eq("project_id", project.id),
-        supabase.from("line_items").select("id").eq("project_id", project.id),
-        supabase
-          .from("board_checkins")
-          .select("id")
-          .eq("project_id", project.id)
-          .order("created_at", { ascending: false })
-          .limit(1),
-        supabase.from("contractors").select("id, name").eq("project_id", project.id),
-      ]);
-    bidCount = (bidsRaw ?? []).length;
+    const [summary, { data: checkinsRaw }, { data: contractors }] = await Promise.all([
+      computeBidSummary(supabase, project.id),
+      supabase
+        .from("board_checkins")
+        .select("id")
+        .eq("project_id", project.id)
+        .order("created_at", { ascending: false })
+        .limit(1),
+      supabase.from("contractors").select("id, name").eq("project_id", project.id),
+    ]);
+    bidSummary = summary;
     hasContractors = (contractors ?? []).length > 0;
-
-    const bidIds = (bidsRaw ?? []).map((b) => b.id);
-    const lineItemIds = new Set((lineItemsRaw ?? []).map((li) => li.id));
-    if (bidIds.length > 0 && lineItemIds.size > 0) {
-      const { data: amountsRaw } = await supabase
-        .from("bid_line_item_amounts")
-        .select("bid_id, line_item_id, amount")
-        .in("bid_id", bidIds);
-      const totalsByBid = new Map<string, number>();
-      for (const a of amountsRaw ?? []) {
-        if (!lineItemIds.has(a.line_item_id) || a.amount === null) continue;
-        totalsByBid.set(a.bid_id, (totalsByBid.get(a.bid_id) ?? 0) + a.amount);
-      }
-      const validTotals = [...totalsByBid.values()];
-      if (validTotals.length > 0) {
-        bidRange = { min: Math.min(...validTotals), max: Math.max(...validTotals) };
-      }
-    }
 
     if (checkinsRaw && checkinsRaw.length > 0) {
       const { data: responses } = await supabase
@@ -268,17 +244,24 @@ export default async function HomePage() {
         <Section
           title="Current Project & Updates"
           action={
-            project ? (
-              <Link href="/project" className="text-sm text-ink underline hover:text-gold">
-                Open bid ledger →
-              </Link>
-            ) : undefined
+            <div className="flex items-center gap-3">
+              {projects.length > 1 && (
+                <Link href="/projects" className="text-sm text-ink-soft underline hover:text-ink">
+                  View all {projects.length} projects →
+                </Link>
+              )}
+              {project && (
+                <Link href={`/project/${project.id}`} className="text-sm text-ink underline hover:text-gold">
+                  Open bid ledger →
+                </Link>
+              )}
+            </div>
           }
         >
           {project ? (
             <div className="space-y-4">
               <Link
-                href="/project#bid-ledger"
+                href={`/project/${project.id}#bid-ledger`}
                 className="group flex flex-col rounded-lg border border-rule bg-paper-card p-5 shadow-card transition-all duration-150 hover:-translate-y-0.5 hover:border-gold hover:shadow-card-hover"
               >
                 <div className="mb-1 flex items-center justify-between">
@@ -301,13 +284,7 @@ export default async function HomePage() {
                   />
                 </div>
                 <p className="text-xs text-ink-soft">
-                  {bidCount === 0
-                    ? "No bids yet"
-                    : bidRange
-                      ? bidRange.min === bidRange.max
-                        ? `${fmt(bidRange.min)} · ${bidCount} bid${bidCount === 1 ? "" : "s"}`
-                        : `${fmt(bidRange.min)}–${fmt(bidRange.max)} · ${bidCount} bids`
-                      : `${bidCount} bid${bidCount === 1 ? "" : "s"} · amounts not entered yet`}
+                  {formatBidSummary(bidSummary)}
                   {latestCheckin
                     ? ` · ${latestCheckin.responded} of ${latestCheckin.total} replied to latest check-in`
                     : ""}
@@ -315,7 +292,7 @@ export default async function HomePage() {
               </Link>
 
               <Link
-                href="/project#updates"
+                href={`/project/${project.id}#updates`}
                 className="group flex flex-col rounded-lg border border-rule bg-paper-card p-5 shadow-card transition-all duration-150 hover:-translate-y-0.5 hover:border-gold hover:shadow-card-hover"
               >
                 <div className="mb-2 flex items-center justify-between">
@@ -364,7 +341,16 @@ export default async function HomePage() {
               </Link>
             </div>
           ) : (
-            <p className="text-sm text-ink-soft">No project set up yet.</p>
+            <p className="text-sm text-ink-soft">
+              No project set up yet.{" "}
+              {isAdmin ? (
+                <span className="inline-flex align-middle">
+                  <NewProjectButton />
+                </span>
+              ) : (
+                "Ask your board admin to start one."
+              )}
+            </p>
           )}
         </Section>
 
