@@ -5,6 +5,7 @@ import {
   formatPeriodLabel,
   periodKey,
   shiftPeriod,
+  summarizeDues,
 } from "./dues";
 
 describe("periodKey", () => {
@@ -102,5 +103,39 @@ describe("calculateCollectionRate", () => {
         { status: "paid", amount_due: 300 },
       ]),
     ).toBe(100);
+  });
+});
+
+describe("summarizeDues", () => {
+  it("totals collected and outstanding, and counts overdue units, from a mix", () => {
+    const summary = summarizeDues([
+      { status: "paid", amount_due: 300 },
+      { status: "paid", amount_due: 300 },
+      { status: "unpaid", amount_due: 250 },
+      { status: "unpaid", amount_due: 250 },
+      { status: "waived", amount_due: 999 },
+    ]);
+    expect(summary.totalCollected).toBe(600);
+    expect(summary.totalOutstanding).toBe(500);
+    expect(summary.overdueCount).toBe(2);
+    // billedCount includes the waived charge — it was billed, just forgiven.
+    expect(summary.billedCount).toBe(5);
+    expect(summary.collectionRate).toBeCloseTo(600 / (600 + 500) * 100);
+  });
+
+  it("is all zeros with a 100% collection rate when nothing has been billed", () => {
+    const summary = summarizeDues([]);
+    expect(summary.totalCollected).toBe(0);
+    expect(summary.totalOutstanding).toBe(0);
+    expect(summary.overdueCount).toBe(0);
+    expect(summary.billedCount).toBe(0);
+    expect(summary.collectionRate).toBe(100);
+  });
+
+  it("a waived-only period bills the unit but never counts it as overdue", () => {
+    const summary = summarizeDues([{ status: "waived", amount_due: 400 }]);
+    expect(summary.overdueCount).toBe(0);
+    expect(summary.totalOutstanding).toBe(0);
+    expect(summary.billedCount).toBe(1);
   });
 });

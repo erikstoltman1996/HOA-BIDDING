@@ -6,8 +6,9 @@ import { AppHeader } from "@/components/AppHeader";
 import { SectionNav } from "@/components/SectionNav";
 import { UnitManager } from "@/components/dues/UnitManager";
 import { DuesTable } from "@/components/dues/DuesTable";
+import { DuesSummary } from "@/components/dues/DuesSummary";
 import { GenerateChargesButton } from "@/components/dues/GenerateChargesButton";
-import { currentPeriod, formatPeriodLabel, shiftPeriod } from "@/lib/dues";
+import { currentPeriod, formatPeriodLabel, shiftPeriod, summarizeDues } from "@/lib/dues";
 import { ChevronLeft, ChevronRight } from "@/components/bid-ledger/icons";
 
 export default async function DuesPage({
@@ -67,10 +68,20 @@ export default async function DuesPage({
           </div>
         </div>
 
+        <DuesSummary summary={summarizeDues(charges.map((c) => ({ status: c.status, amount_due: c.amountDue })))} />
+
         {isAdmin && (
           <>
-            <UnitManager units={units} />
             <GenerateChargesButton period={period} unitCount={units.length} />
+            <details className="group mb-6">
+              <summary className="flex cursor-pointer select-none items-center gap-1 text-sm font-medium text-ink-soft hover:text-ink">
+                <ChevronRight size={14} className="transition-transform group-open:rotate-90" />
+                Manage units
+              </summary>
+              <div className="mt-2">
+                <UnitManager units={units} />
+              </div>
+            </details>
           </>
         )}
 

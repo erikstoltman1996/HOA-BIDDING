@@ -5,7 +5,7 @@ import { ReserveTrackerService, type CommunityAsset } from "@/lib/ReserveTracker
 import { fetchDuesChargesForPeriod } from "@/lib/duesData";
 import { currentPeriod, calculateCollectionRate, formatPeriodLabel } from "@/lib/dues";
 import { fmt } from "@/lib/money";
-import { healthBandColor } from "@/lib/healthBand";
+import { DUES_COLLECTION_THRESHOLDS, healthBandColor } from "@/lib/healthBand";
 import { AppHeader } from "@/components/AppHeader";
 import { DuesTable } from "@/components/dues/DuesTable";
 import { ArrowRight, ClipboardList } from "@/components/bid-ledger/icons";
@@ -177,7 +177,7 @@ export default async function HomePage() {
             label="Dues Collection Rate"
             value={`${collectionRate.toFixed(0)}%`}
             sublabel={formatPeriodLabel(period)}
-            color={healthBandColor(collectionRate)}
+            color={healthBandColor(collectionRate, DUES_COLLECTION_THRESHOLDS)}
           />
         </div>
 

@@ -49,3 +49,35 @@ export function calculateCollectionRate(charges: ChargeForRate[]): number {
     .reduce((sum, c) => sum + c.amount_due, 0);
   return (totalPaid / totalDue) * 100;
 }
+
+export interface DuesSummary {
+  collectionRate: number;
+  totalCollected: number;
+  totalOutstanding: number;
+  overdueCount: number;
+  /** Units actually billed this period (charges.length) — the denominator
+   *  for "X of Y units overdue". A unit with no charge yet this period
+   *  hasn't been billed, so it isn't counted as overdue or as billed. */
+  billedCount: number;
+}
+
+/**
+ * The at-a-glance numbers for a period's dues summary strip: what's been
+ * collected, what's outstanding, and how many (of how many billed) units
+ * are overdue. Waived charges count toward billedCount (they were billed,
+ * the board just chose not to collect) but never toward overdue, collected,
+ * or outstanding — consistent with calculateCollectionRate's treatment.
+ */
+export function summarizeDues(charges: ChargeForRate[]): DuesSummary {
+  return {
+    collectionRate: calculateCollectionRate(charges),
+    totalCollected: charges
+      .filter((c) => c.status === "paid")
+      .reduce((sum, c) => sum + c.amount_due, 0),
+    totalOutstanding: charges
+      .filter((c) => c.status === "unpaid")
+      .reduce((sum, c) => sum + c.amount_due, 0),
+    overdueCount: charges.filter((c) => c.status === "unpaid").length,
+    billedCount: charges.length,
+  };
+}
