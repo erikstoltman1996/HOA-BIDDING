@@ -50,6 +50,8 @@ export function ReserveTrackerPanel({
   const [balance, setBalance] = useState(String(initialBalance));
   const [contribution, setContribution] = useState(String(initialContribution));
   const [isPending, startTransition] = useTransition();
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [saveError, setSaveError] = useState("");
 
   const [expDescription, setExpDescription] = useState("");
   const [expAmount, setExpAmount] = useState("");
@@ -58,12 +60,25 @@ export function ReserveTrackerPanel({
   const [inflationRate, setInflationRate] = useState("");
   const [granularity, setGranularity] = useState<"yearly" | "monthly">("yearly");
 
+  // Balance/contribution edits save on blur (and after an import apply)
+  // rather than on every keystroke — but a save happening invisibly is
+  // exactly what caused "nothing saves after" reports, so this always
+  // surfaces what happened instead of failing silently.
   function saveSettings(nextBalance: string, nextContribution: string) {
     const b = Number(nextBalance);
     const c = Number(nextContribution);
-    if (Number.isFinite(b) && Number.isFinite(c)) {
-      startTransition(() => updateReserveSettings(b, c));
-    }
+    if (!Number.isFinite(b) || !Number.isFinite(c)) return;
+    setSaveStatus("saving");
+    setSaveError("");
+    startTransition(async () => {
+      try {
+        await updateReserveSettings(b, c);
+        setSaveStatus("saved");
+      } catch (err) {
+        setSaveStatus("error");
+        setSaveError(err instanceof Error ? err.message : "Could not save these settings");
+      }
+    });
   }
 
   function handleImportApply(detectedBalance: number | null, detectedContribution: number | null) {
@@ -206,6 +221,15 @@ export function ReserveTrackerPanel({
             {result ? `${result.percentFundedBefore.toFixed(0)}%` : "—"}
           </p>
         </div>
+        {isAdmin && saveStatus !== "idle" && (
+          <div className="flex items-end pb-0.5">
+            {saveStatus === "saving" && <p className="text-xs text-ink-soft">Saving…</p>}
+            {saveStatus === "saved" && <p className="text-xs text-check-green">Saved</p>}
+            {saveStatus === "error" && (
+              <p className="text-xs text-danger">Could not save: {saveError}</p>
+            )}
+          </div>
+        )}
       </div>
 
       {isAdmin && (
