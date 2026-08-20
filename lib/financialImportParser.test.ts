@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseFinancialImport, type Cell } from "./financialImportParser";
+import { parseExpenseBreakdown, parseFinancialImport, type Cell } from "./financialImportParser";
 
 // Shaped like the real sample export: title row, month-header row starting
 // in July (not January), an item-number + description two-column label,
@@ -123,5 +123,118 @@ describe("parseFinancialImport", () => {
     ];
     const result = parseFinancialImport(grid);
     expect(result.detectedBalance?.value).toBe(1000);
+  });
+});
+
+// Shaped like the real sample export's expense section: an "Expenses"
+// section header (with its own month-name row, no numeric data), several
+// category rows with an item-number prefix, a blank separator row, and a
+// "Total Expense" row anchoring the bottom.
+function expenseSectionGrid(): Cell[][] {
+  return [
+    ["Expenses - Monthly HOA", null, "July", "August", "September", "October", "November", "December"],
+    [1, "Bookkeeping Service", 100, 100, 100, 100, 100, 100],
+    [2, "Snow Plowing", null, null, null, null, 250, 300],
+    [null, null, null, null, null, null, null, null],
+    ["Total Expense", null, 100, 100, 100, 100, 350, 400],
+  ];
+}
+
+describe("parseExpenseBreakdown", () => {
+  it("collects every category row between the section header and Total Expense", () => {
+    const result = parseExpenseBreakdown(expenseSectionGrid(), 2026);
+    expect(result.categories.map((c) => c.label)).toEqual(["1 Bookkeeping Service", "2 Snow Plowing"]);
+  });
+
+  it("maps each month column to a real calendar period, starting from the given year", () => {
+    const result = parseExpenseBreakdown(expenseSectionGrid(), 2026);
+    const bookkeeping = result.categories[0];
+    expect(bookkeeping.entries).toEqual([
+      { period: "2026-07-01", amount: 100 },
+      { period: "2026-08-01", amount: 100 },
+      { period: "2026-09-01", amount: 100 },
+      { period: "2026-10-01", amount: 100 },
+      { period: "2026-11-01", amount: 100 },
+      { period: "2026-12-01", amount: 100 },
+    ]);
+  });
+
+  it("only records months that actually have a value, skipping blanks", () => {
+    const result = parseExpenseBreakdown(expenseSectionGrid(), 2026);
+    const snowPlowing = result.categories[1];
+    expect(snowPlowing.entries).toEqual([
+      { period: "2026-11-01", amount: 250 },
+      { period: "2026-12-01", amount: 300 },
+    ]);
+  });
+
+  it("rolls the year forward when a fiscal year crosses a calendar-year boundary", () => {
+    const grid: Cell[][] = [
+      ["Expenses", null, "November", "December", "January", "February", "March", "April"],
+      [1, "Insurance", 50, 50, 50, 50, 50, 50],
+      ["Total Expense", null, 50, 50, 50, 50, 50, 50],
+    ];
+    const result = parseExpenseBreakdown(grid, 2026);
+    expect(result.categories[0].entries.map((e) => e.period)).toEqual([
+      "2026-11-01",
+      "2026-12-01",
+      "2027-01-01", // crossed into the next calendar year
+      "2027-02-01",
+      "2027-03-01",
+      "2027-04-01",
+    ]);
+  });
+
+  it("stops at Total Income rather than bleeding into the income section", () => {
+    const grid: Cell[][] = [
+      ["Income", null, "Jan", "Feb", "Mar", "Apr", "May", "Jun"],
+      [1, "Dues", 500, 500, 500, 500, 500, 500],
+      ["Total Income", null, 500, 500, 500, 500, 500, 500],
+      ["Expenses", null, "Jan", "Feb", "Mar", "Apr", "May", "Jun"],
+      [1, "Insurance", 50, 50, 50, 50, 50, 50],
+      ["Total Expense", null, 50, 50, 50, 50, 50, 50],
+    ];
+    const result = parseExpenseBreakdown(grid, 2026);
+    expect(result.categories.map((c) => c.label)).toEqual(["1 Insurance"]);
+  });
+
+  it("degrades to an empty result with a warning when there's no Total Expense row", () => {
+    const grid: Cell[][] = [
+      ["Expenses", null, "Jan", "Feb", "Mar", "Apr", "May", "Jun"],
+      [1, "Insurance", 50, 50, 50, 50, 50, 50],
+    ];
+    const result = parseExpenseBreakdown(grid, 2026);
+    expect(result.categories).toEqual([]);
+    expect(result.warnings.some((w) => w.includes("Total Expense"))).toBe(true);
+  });
+
+  it("degrades gracefully when month columns aren't sequential, instead of mislabeling periods", () => {
+    const grid: Cell[][] = [
+      ["Expenses", null, "January", "March", "February", "April", "May", "June"],
+      [1, "Insurance", 50, 50, 50, 50, 50, 50],
+      ["Total Expense", null, 50, 50, 50, 50, 50, 50],
+    ];
+    const result = parseExpenseBreakdown(grid, 2026);
+    expect(result.categories).toEqual([]);
+    expect(result.warnings.some((w) => w.includes("sequential"))).toBe(true);
+  });
+
+  it("warns when more than 12 month columns are found, without discarding the data", () => {
+    const grid: Cell[][] = [
+      [
+        "Expenses", null,
+        "July", "August", "September", "October", "November", "December",
+        "January", "February", "March", "April", "May", "June",
+        "July", "August",
+      ],
+      [1, "Insurance", 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50],
+      [
+        "Total Expense", null,
+        50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50,
+      ],
+    ];
+    const result = parseExpenseBreakdown(grid, 2026);
+    expect(result.categories).toHaveLength(1);
+    expect(result.warnings.some((w) => w.includes("more than a year"))).toBe(true);
   });
 });

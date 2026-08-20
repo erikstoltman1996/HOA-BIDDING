@@ -43,6 +43,22 @@ export interface ParsedFinancialImport {
   warnings: string[];
 }
 
+export interface DetectedExpenseEntry {
+  /** First-of-month date string, e.g. "2026-07-01". */
+  period: string;
+  amount: number;
+}
+
+export interface DetectedExpenseCategory {
+  label: string;
+  entries: DetectedExpenseEntry[];
+}
+
+export interface ParsedExpenseBreakdown {
+  categories: DetectedExpenseCategory[];
+  warnings: string[];
+}
+
 const MONTH_NAMES = [
   "january", "february", "march", "april", "may", "june",
   "july", "august", "september", "october", "november", "december",
@@ -222,4 +238,127 @@ export function parseFinancialImport(grid: Cell[][]): ParsedFinancialImport {
   }
 
   return { detectedBalance, detectedContribution, warnings };
+}
+
+// --- Full expense breakdown (category x month) -----------------------------
+
+const TOTAL_EXPENSE_RE = /total\s*expense/i;
+const TOTAL_INCOME_RE = /total\s*income/i;
+/** A row that's itself a section title rather than a line item — e.g.
+ *  "Expenses - Monthly HOA". Distinguished from a real category row by
+ *  also containing the word "monthly" alongside "expense", which no real
+ *  category label in practice does. */
+const EXPENSE_SECTION_HEADER_RE = /expense/i;
+
+function monthIndex(name: string): number {
+  const s = name.trim().toLowerCase();
+  const full = MONTH_NAMES.indexOf(s);
+  if (full !== -1) return full;
+  return MONTH_ABBR.indexOf(s);
+}
+
+/**
+ * Finds every expense line-item row (between an "Expenses" section and its
+ * "Total Expense" row) and reads out its value for each month column,
+ * mapped to a real calendar period using `startYear` as the year the
+ * *first* month column belongs to — spreadsheets reliably label columns
+ * with a month name, never a year, so there's no way to recover the year
+ * from the file alone. Assumes month columns are chronologically
+ * sequential (true of every real export seen so far); if they're not,
+ * this degrades to an empty result with a warning rather than silently
+ * mislabeling periods.
+ */
+export function parseExpenseBreakdown(grid: Cell[][], startYear: number): ParsedExpenseBreakdown {
+  const warnings: string[] = [];
+  const header = findMonthHeaderRow(grid);
+
+  if (!header) {
+    return {
+      categories: [],
+      warnings: ["Couldn't find a row of month names in this file's layout — add categories manually."],
+    };
+  }
+
+  const firstMonthCol = Math.min(...header.monthCols);
+  const orderedMonthCols = [...header.monthCols].sort((a, b) => a - b);
+
+  const monthNames = orderedMonthCols.map((c) => cellText(grid[header.rowIndex]?.[c]));
+  const monthIndices = monthNames.map(monthIndex);
+  if (monthIndices.some((i) => i === -1)) {
+    return {
+      categories: [],
+      warnings: ["Some month columns didn't resolve to a recognizable month name — add categories manually."],
+    };
+  }
+  for (let i = 1; i < monthIndices.length; i++) {
+    const expected = (monthIndices[i - 1] + 1) % 12;
+    if (monthIndices[i] !== expected) {
+      return {
+        categories: [],
+        warnings: [
+          "Month columns in this file aren't in sequential order — this importer assumes a normal Jan-Dec (or fiscal-year) sequence. Add categories manually.",
+        ],
+      };
+    }
+  }
+  const periods = monthIndices.map((mi, i) => {
+    // Walk forward from the first column's (year, month) rather than
+    // assuming every column is in the same calendar year — a fiscal year
+    // starting mid-year crosses into the next calendar year partway through.
+    const firstMonth = monthIndices[0];
+    const yearsElapsed = Math.floor((firstMonth + i) / 12);
+    const y = startYear + yearsElapsed;
+    return `${y}-${String(mi + 1).padStart(2, "0")}-01`;
+  });
+
+  let totalExpenseRow = -1;
+  grid.forEach((row, r) => {
+    if (r === header.rowIndex) return;
+    const label = rowLabel(row ?? [], firstMonthCol);
+    if (totalExpenseRow === -1 && TOTAL_EXPENSE_RE.test(label)) totalExpenseRow = r;
+  });
+
+  if (totalExpenseRow === -1) {
+    return {
+      categories: [],
+      warnings: ["Couldn't find a \"Total Expense\" row to anchor the expense list — add categories manually."],
+    };
+  }
+
+  // Walk upward from the Total Expense row, collecting line-item rows,
+  // stopping at the section header above them (or Total Income, as a hard
+  // backstop against bleeding into the income section).
+  const categories: DetectedExpenseCategory[] = [];
+  for (let r = totalExpenseRow - 1; r >= 0; r--) {
+    if (r === header.rowIndex) break;
+    const row = grid[r] ?? [];
+    const label = rowLabel(row, firstMonthCol);
+    if (!label) continue; // blank separator row — keep walking up
+    if (TOTAL_INCOME_RE.test(label)) break;
+    if (EXPENSE_SECTION_HEADER_RE.test(label) && !orderedMonthCols.some((c) => cellNumber(row[c]) !== null)) {
+      // A row that mentions "expense" but has no numeric data of its own
+      // is the section title (e.g. "Expenses - Monthly HOA"), not a
+      // category — stop here.
+      break;
+    }
+
+    const entries: DetectedExpenseEntry[] = [];
+    orderedMonthCols.forEach((c, i) => {
+      const amount = cellNumber(row[c]);
+      if (amount !== null) entries.push({ period: periods[i], amount });
+    });
+    categories.push({ label, entries });
+  }
+  categories.reverse(); // walked upward, so restore original top-to-bottom order
+
+  if (categories.length === 0) {
+    warnings.push('Found a "Total Expense" row but no category rows above it — add categories manually.');
+  }
+  if (orderedMonthCols.length > 12) {
+    warnings.push(
+      `Found ${orderedMonthCols.length} month columns (more than a year's worth) — double-check the imported dates below before saving, especially if any month name appears more than once in this file.`,
+    );
+  }
+
+  return { categories, warnings };
 }

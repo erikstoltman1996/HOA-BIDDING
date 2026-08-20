@@ -1,13 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import ExcelJS from "exceljs";
-import Papa from "papaparse";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin, requireUser } from "@/lib/auth";
 import { ReserveTrackerService, type CommunityAsset } from "@/lib/ReserveTrackerService";
 import { toCsv } from "@/lib/csv";
-import { parseFinancialImport, type Cell, type ParsedFinancialImport } from "@/lib/financialImportParser";
+import { parseFinancialImport, type ParsedFinancialImport } from "@/lib/financialImportParser";
+import { fileToGrid } from "@/lib/fileToGrid";
 
 export async function updateReserveSettings(currentBalance: number, annualContribution: number) {
   const admin = await requireAdmin();
@@ -106,9 +105,6 @@ export async function exportReserveOutlookCsv(): Promise<string> {
 
 // --- Financial data import ---------------------------------------------
 
-const MAX_IMPORT_FILE_BYTES = 5 * 1024 * 1024; // 5MB — this is a small
-// categorized cash-flow sheet, not a scanned archive.
-
 /**
  * Parses an uploaded bookkeeping export (CSV or XLSX) into a proposed
  * current balance and annual reserve contribution — see
@@ -119,39 +115,8 @@ const MAX_IMPORT_FILE_BYTES = 5 * 1024 * 1024; // 5MB — this is a small
  */
 export async function parseFinancialImportFile(formData: FormData): Promise<ParsedFinancialImport> {
   await requireAdmin();
-
   const file = formData.get("file");
   if (!(file instanceof File)) throw new Error("No file uploaded");
-  if (file.size === 0) throw new Error("That file is empty");
-  if (file.size > MAX_IMPORT_FILE_BYTES) {
-    throw new Error("File is too large (5MB max) — this should just be a monthly income/expense sheet");
-  }
-
-  const name = file.name.toLowerCase();
-  const buffer = await file.arrayBuffer();
-
-  let grid: Cell[][];
-
-  if (name.endsWith(".csv")) {
-    const text = new TextDecoder("utf-8").decode(buffer);
-    const parsed = Papa.parse<string[]>(text, { skipEmptyLines: false });
-    grid = parsed.data;
-  } else if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer);
-    const worksheet = workbook.worksheets[0];
-    if (!worksheet) throw new Error("That workbook has no sheets");
-    grid = [];
-    worksheet.eachRow({ includeEmpty: true }, (row) => {
-      const values: Cell[] = [];
-      row.eachCell({ includeEmpty: true }, (cell) => {
-        values.push(cell.value as Cell);
-      });
-      grid.push(values);
-    });
-  } else {
-    throw new Error("Please upload a .csv or .xlsx file");
-  }
-
+  const grid = await fileToGrid(file);
   return parseFinancialImport(grid);
 }

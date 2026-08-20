@@ -5,6 +5,7 @@ const SECTIONS = [
   { href: "/community", label: "Community" },
   { href: "/reserve", label: "Reserve Fund" },
   { href: "/dues", label: "Dues" },
+  { href: "/expenses", label: "Expenses" },
 ];
 
 // The Bid Ledger tab also covers every individual /project/[id] page, not

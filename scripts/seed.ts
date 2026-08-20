@@ -387,6 +387,43 @@ async function main() {
     );
   }
 
+  const { data: existingCategories } = await admin.from("expense_categories").select("*").eq("org_id", orgId);
+  let expenseCategories = existingCategories ?? [];
+  if (expenseCategories.length === 0) {
+    const { data: inserted, error } = await admin
+      .from("expense_categories")
+      .insert([
+        { org_id: orgId, name: "Landscaping", sort_order: 0 },
+        { org_id: orgId, name: "Insurance", sort_order: 1 },
+        { org_id: orgId, name: "Utilities", sort_order: 2 },
+        { org_id: orgId, name: "Snow Removal", sort_order: 3 },
+      ])
+      .select();
+    if (error) throw error;
+    expenseCategories = inserted;
+  }
+
+  const { data: existingExpenseEntries } = await admin.from("expense_entries").select("id").limit(1);
+  if (!existingExpenseEntries || existingExpenseEntries.length === 0) {
+    const thisPeriod = currentPeriod();
+    const lastPeriod = shiftPeriod(thisPeriod, -1);
+    // This period: a realistic partial mix (some categories not entered
+    // yet) so the "N of M categories entered" stat has something to show.
+    await admin.from("expense_entries").insert([
+      { category_id: expenseCategories[0].id, period: thisPeriod, amount: 620 },
+      { category_id: expenseCategories[1].id, period: thisPeriod, amount: 410 },
+      // Utilities and Snow Removal intentionally left unentered this period.
+    ]);
+    // Last period: fully entered.
+    await admin.from("expense_entries").insert(
+      expenseCategories.map((c, i) => ({
+        category_id: c.id,
+        period: lastPeriod,
+        amount: [620, 410, 180, 250][i] ?? 100,
+      })),
+    );
+  }
+
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
 
   console.log("\nSeed complete.\n");

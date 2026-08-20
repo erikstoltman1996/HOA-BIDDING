@@ -31,9 +31,10 @@ multi-project dashboard.
 
 ## 2. Set up the database
 
-In your Supabase project, open the SQL editor and run these five files **in order**:
+In your Supabase project, open the SQL editor and run these six files **in order**:
 `supabase/migrations/0001_init.sql`, then `0002_contractor_and_voting.sql`, then
-`0003_reserve_tracker.sql`, then `0004_dues_tracking.sql`, then `0005_multi_project.sql`.
+`0003_reserve_tracker.sql`, then `0004_dues_tracking.sql`, then `0005_multi_project.sql`, then
+`0006_expense_categories.sql`.
 (If you use the Supabase CLI instead: `supabase link` then `supabase db push`.)
 
 `0001_init.sql` creates the Phase 1 tables (`organizations`, `users`, `projects`, `line_items`,
@@ -62,6 +63,11 @@ exactly one project. Every other project-scoped table (`line_items`, `bids`,
 already scoped to "any project in my org," so this was the only schema change multi-project
 support needed — the rest was routing (`/project/[id]` instead of a fixed `/project`) and a
 new `/projects` list page.
+
+`0006_expense_categories.sql` adds `expense_categories` (admin-managed, e.g. "Insurance",
+"Snow Plowing") and `expense_entries` (one row per category per month — no paid/unpaid
+workflow like `dues_charges`, since an expense is a fact once entered, not a receivable to
+collect).
 
 ## 3. Configure auth redirects
 
@@ -110,7 +116,7 @@ no-login `/contractor/[token]` and `/vote/[token]` demo links.
 
 ## Tests
 
-`npm test` runs the unit test suite (Vitest, 84 cases across six files):
+`npm test` runs the unit test suite (Vitest, 96 cases across eight files):
 
 - `lib/ReserveTrackerService.ts` (36 cases) — the reserve-fund projection calculator behind
   `/reserve`. Uses the standard reserve-study "component method": each asset's Fully Funded
@@ -128,13 +134,17 @@ no-login `/contractor/[token]` and `/vote/[token]` demo links.
   `calculateCollectionRate`, which is `paid / (paid + unpaid)` with **waived charges excluded
   from both the numerator and denominator** — a waiver never makes the collection rate look
   better than it is.
-- `lib/financialImportParser.ts` (10 cases) — including two regressions found by running the
+- `lib/financialImportParser.ts` (18 cases) — including two regressions found by running the
   parser against a real HOA's export during development: an empty "Prior Year Ending Bank
   Balance" row matching before the real "End Bank Balance" row (fixed by preferring whichever
   label match actually has populated data, not the first match), and a reserve-contribution
   row that appeared *before* the row chosen as the month header (fixed by not restricting the
-  label search to rows after the header).
-- `lib/healthBand.ts` (9 cases) and `lib/csv.ts` (6 cases).
+  label search to rows after the header). Also covers `parseExpenseBreakdown()`: collecting
+  every category row between an expense section and its Total Expense row, mapping month
+  columns to real calendar periods (including a fiscal year crossing into the next calendar
+  year), and degrading to "add manually" rather than mislabeling dates when month columns
+  aren't in sequential order.
+- `lib/expenses.ts` (4 cases), `lib/healthBand.ts` (9 cases), and `lib/csv.ts` (6 cases).
 
 The reserve and dues health indicators share the same green/gold/red band system via
 `lib/healthBand.ts`, parameterized per metric — reserve-percent-funded and dues-collection-rate
@@ -244,10 +254,28 @@ each.
   in exactly one place. The collection-rate stat is `paid / (paid + unpaid)`, with waived
   charges excluded from both sides of that fraction on purpose, so a waiver can't make the rate
   look better than it is.
-- **CSV export** — the bid ledger, the reserve 10-year outlook, and a dues period each have an
-  "Export CSV" button (`components/ExportCsvButton.tsx`, `lib/csv.ts` — a small RFC 4180
-  builder, no dependency needed for something this size). Available to any org member, the
-  same access level as viewing the page — this is read-only, not an admin action.
+- **Operating expense tracking** (`/expenses`) — an admin maintains a category roster
+  (`expense_categories` — "Insurance," "Snow Plowing," whatever the association actually
+  spends on) and enters an amount per category per month directly in the table
+  (`components/expenses/ExpenseTable.tsx`, debounced-save the same way the bid ledger's cells
+  save). No paid/unpaid workflow like dues — an expense either has an amount entered for the
+  month or it doesn't, and every category always shows a row even when blank, since "not
+  entered yet" is itself information worth seeing at a glance. Two ways to fill it in: type
+  amounts by hand, or **bulk-import a whole bookkeeping export**
+  (`components/expenses/ExpenseImport.tsx`) — reuses the same
+  `lib/financialImportParser.ts` module the reserve importer uses, but its
+  `parseExpenseBreakdown()` reads the *entire* expense section (every category row between an
+  "Expenses" header and "Total Expense," for every month column found) rather than just two
+  summary numbers. Since a spreadsheet labels columns with a month name but never a year, the
+  admin supplies the first column's calendar year by hand; the parser then walks forward
+  month-by-month (rolling the year over correctly when a fiscal year crosses into the next
+  calendar year) rather than guessing. Same review-before-apply flow as the reserve importer:
+  a preview list, then an explicit Apply that creates any new category (matched by name) and
+  upserts every month's amount — nothing written until then.
+- **CSV export** — the bid ledger, the reserve 10-year outlook, a dues period, and an expenses
+  period each have an "Export CSV" button (`components/ExportCsvButton.tsx`, `lib/csv.ts` — a
+  small RFC 4180 builder, no dependency needed for something this size). Available to any org
+  member, the same access level as viewing the page — this is read-only, not an admin action.
 
 ## Deploying
 

@@ -407,6 +407,42 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["dues_charges"]["Insert"]>;
         Relationships: [];
       };
+      expense_categories: {
+        Row: {
+          id: string;
+          org_id: string;
+          name: string;
+          sort_order: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          org_id: string;
+          name?: string;
+          sort_order?: number;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["expense_categories"]["Insert"]>;
+        Relationships: [];
+      };
+      expense_entries: {
+        Row: {
+          id: string;
+          category_id: string;
+          period: string;
+          amount: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          category_id: string;
+          period: string;
+          amount: number;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["expense_entries"]["Insert"]>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
