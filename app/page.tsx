@@ -23,7 +23,8 @@ const STATUS_LABEL: Record<TimelineStatus, string> = {
 const STATUS_COLOR: Record<TimelineStatus, string> = {
   on_track: "#3F6B4E",
   ahead: "#3F6B4E",
-  delayed: "#B8863B",
+  // Gold darkened for text — see --color-gold-text in globals.css.
+  delayed: "#83602A",
 };
 
 // Small, precise status dots for the project card — Linear's restraint, not

@@ -96,7 +96,7 @@ function LoginForm() {
         </div>
       )}
 
-      {error && <p className="text-xs text-red-700">{error}</p>}
+      {error && <p className="text-xs text-danger">{error}</p>}
 
       <Button type="submit" className="w-full" disabled={status === "loading"}>
         {status === "loading" ? "…" : mode === "password" ? "Log in" : "Send magic link"}

@@ -91,7 +91,7 @@ export function UnitManager({ units }: { units: UnitRow[] }) {
           <Plus size={14} /> Add
         </Button>
       </form>
-      {error && <p className="mt-2 text-xs text-red-700">{error}</p>}
+      {error && <p className="mt-2 text-xs text-danger">{error}</p>}
     </div>
   );
 }

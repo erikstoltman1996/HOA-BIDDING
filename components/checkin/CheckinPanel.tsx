@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { CheckinDisclaimer } from "@/components/checkin/CheckinDisclaimer";
 import { ResponseForm } from "@/components/checkin/ResponseForm";
-import { Mail, Send, UserPlus, Users, X } from "@/components/bid-ledger/icons";
+import { ChevronRight, Mail, Send, UserPlus, Users, X } from "@/components/bid-ledger/icons";
 
 export interface BoardMember {
   id: string;
@@ -70,8 +70,24 @@ export function CheckinPanel({
 
       {isAdmin && (
         <>
-          <BoardRoster boardMembers={boardMembers} />
-          <SendCheckinForm projectId={projectId} boardMembers={boardMembers} />
+          <details className="group mb-6">
+            <summary className="flex cursor-pointer select-none items-center gap-1 text-sm font-medium text-ink-soft hover:text-ink">
+              <ChevronRight size={14} className="transition-transform group-open:rotate-90" />
+              Board roster
+            </summary>
+            <div className="mt-2">
+              <BoardRoster boardMembers={boardMembers} />
+            </div>
+          </details>
+          <details className="group mb-6">
+            <summary className="flex cursor-pointer select-none items-center gap-1 text-sm font-medium text-ink-soft hover:text-ink">
+              <ChevronRight size={14} className="transition-transform group-open:rotate-90" />
+              Send a new check-in
+            </summary>
+            <div className="mt-2">
+              <SendCheckinForm projectId={projectId} boardMembers={boardMembers} />
+            </div>
+          </details>
         </>
       )}
 
@@ -158,7 +174,7 @@ function BoardRoster({ boardMembers }: { boardMembers: BoardMember[] }) {
           <UserPlus size={14} /> Invite
         </Button>
       </form>
-      {error && <p className="mt-2 text-xs text-red-700">{error}</p>}
+      {error && <p className="mt-2 text-xs text-danger">{error}</p>}
     </div>
   );
 }
@@ -226,7 +242,7 @@ function SendCheckinForm({
         <Send size={14} /> {isPending ? "Sending…" : "Send check-in email"}
       </Button>
       {status === "sent" && <p className="mt-2 text-xs text-check-green">Sent.</p>}
-      {status === "error" && <p className="mt-2 text-xs text-red-700">{error}</p>}
+      {status === "error" && <p className="mt-2 text-xs text-danger">{error}</p>}
     </div>
   );
 }
@@ -271,7 +287,7 @@ function CheckinHistoryCard({
               })
             }
             disabled={isPending}
-            className="flex items-center gap-1 text-xs text-gold hover:opacity-80"
+            className="flex items-center gap-1 text-xs text-gold-text hover:opacity-80"
           >
             <Mail size={12} /> {reminded ? "Reminder sent" : `Remind ${pending.length}`}
           </button>
@@ -291,7 +307,8 @@ function CheckinHistoryCard({
               className="rounded-full px-2.5 py-1 text-xs font-medium"
               style={{
                 border: `1px solid ${t.count === topCount ? "#B8863B" : "#C8C2B4"}`,
-                color: t.count === topCount ? "#B8863B" : "#5B6578",
+                // Gold darkened for text — see --color-gold-text in globals.css.
+                color: t.count === topCount ? "#83602A" : "#5B6578",
               }}
             >
               {t.vendor}: {t.count} of {checkin.responses.length}

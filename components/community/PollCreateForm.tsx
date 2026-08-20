@@ -114,7 +114,7 @@ export function PollCreateForm() {
           )}
         </div>
 
-        {error && <p className="text-xs text-red-700">{error}</p>}
+        {error && <p className="text-xs text-danger">{error}</p>}
 
         <Button type="submit" disabled={isPending}>
           <Send size={14} /> {isPending ? "Publishing…" : "Publish poll"}

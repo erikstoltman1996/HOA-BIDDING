@@ -79,7 +79,8 @@ export function PollList({
                   className="rounded-full px-2.5 py-1 text-xs font-medium"
                   style={{
                     border: `1px solid ${t.count > 0 && t.count === topCount ? "#B8863B" : "#C8C2B4"}`,
-                    color: t.count > 0 && t.count === topCount ? "#B8863B" : "#5B6578",
+                    // Gold darkened for text — see --color-gold-text in globals.css.
+                    color: t.count > 0 && t.count === topCount ? "#83602A" : "#5B6578",
                   }}
                 >
                   {t.label}: {t.count}

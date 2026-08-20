@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { fmt } from "@/lib/money";
 import { healthBandColor } from "@/lib/healthBand";
-import { Plus, X } from "@/components/bid-ledger/icons";
+import { ChevronRight, Plus, X } from "@/components/bid-ledger/icons";
 
 export interface ReserveAssetRow {
   id: string;
@@ -149,7 +149,7 @@ export function ReserveTrackerPanel({
         <div>
           <div className="mb-1 text-xs font-medium text-ink-soft">Funded today</div>
           <p
-            className="font-mono font-semibold"
+            className="font-mono text-3xl font-bold leading-none"
             style={{ color: result ? healthBandColor(result.percentFundedBefore) : "#1F2B3D" }}
           >
             {result ? `${result.percentFundedBefore.toFixed(0)}%` : "—"}
@@ -157,7 +157,17 @@ export function ReserveTrackerPanel({
         </div>
       </div>
 
-      {isAdmin && <AssetManager assets={initialAssets} isPending={isPending} startTransition={startTransition} />}
+      {isAdmin && (
+        <details className="group mb-6">
+          <summary className="flex cursor-pointer select-none items-center gap-1 text-sm font-medium text-ink-soft hover:text-ink">
+            <ChevronRight size={14} className="transition-transform group-open:rotate-90" />
+            Manage community assets
+          </summary>
+          <div className="mt-2">
+            <AssetManager assets={initialAssets} isPending={isPending} startTransition={startTransition} />
+          </div>
+        </details>
+      )}
 
       <div className="mb-6 rounded border border-rule bg-paper-card shadow-card p-3">
         <div className="mb-2 text-xs font-medium text-ink-soft">Model an unplanned expenditure</div>
@@ -359,7 +369,7 @@ function AssetManager({
           <Plus size={14} /> Add
         </Button>
       </form>
-      {error && <p className="mt-2 text-xs text-red-700">{error}</p>}
+      {error && <p className="mt-2 text-xs text-danger">{error}</p>}
     </div>
   );
 }

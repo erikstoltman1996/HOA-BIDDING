@@ -227,7 +227,7 @@ export function BidLedgerClient({
             <Plus size={14} /> Add line item
           </Button>
           <div className="flex-1" />
-          <Button onClick={copySummary} variant="outline" className="!border-gold !text-gold">
+          <Button onClick={copySummary} variant="outline" className="!border-gold !text-gold-text">
             {copied ? <Check size={14} /> : <ClipboardCopy size={14} />}
             {copied ? "Copied" : "Copy summary"}
           </Button>
@@ -235,7 +235,7 @@ export function BidLedgerClient({
       )}
       {!isAdmin && (
         <div className="mb-3 flex justify-end">
-          <Button onClick={copySummary} variant="outline" className="!border-gold !text-gold">
+          <Button onClick={copySummary} variant="outline" className="!border-gold !text-gold-text">
             {copied ? <Check size={14} /> : <ClipboardCopy size={14} />}
             {copied ? "Copied" : "Copy summary"}
           </Button>
@@ -275,7 +275,7 @@ export function BidLedgerClient({
                 >
                   {i === lowestTotalIdx && lowestTotal !== null && (
                     <div
-                      className="absolute -top-3 right-2 flex items-center gap-1 rounded-full border border-dashed border-gold bg-paper-card px-2 py-0.5 text-xs font-bold uppercase text-gold"
+                      className="absolute -top-3 right-2 flex items-center gap-1 rounded-full border border-dashed border-gold bg-paper-card px-2 py-0.5 text-xs font-bold uppercase text-gold-text"
                       style={{ transform: "rotate(-6deg)", letterSpacing: "0.08em" }}
                     >
                       <Stamp size={10} /> Best value
@@ -370,7 +370,8 @@ export function BidLedgerClient({
                 <td key={b.id} className="border-t-2 border-ink border-l border-l-rule p-3">
                   <span
                     className="font-mono font-serif text-base font-bold"
-                    style={{ color: i === lowestTotalIdx && lowestTotal !== null ? "#B8863B" : "#1F2B3D" }}
+                    // Gold darkened for text — see --color-gold-text in globals.css.
+                    style={{ color: i === lowestTotalIdx && lowestTotal !== null ? "#83602A" : "#1F2B3D" }}
                   >
                     {fmt(totals[i])}
                   </span>

@@ -39,7 +39,11 @@ export function healthBand(
 
 const HEALTH_BAND_COLOR: Record<HealthBand, string> = {
   good: "#3F6B4E", // check-green
-  fair: "#B8863B", // gold
+  // Gold darkened for text use — raw gold (#B8863B) measures 2.93:1 on
+  // paper-card, failing WCAG AA even at large-text size (needs 3:1; normal
+  // text needs 4.5:1). This value hits 5.2:1. See --color-gold-text in
+  // globals.css — border/background uses of gold elsewhere are unaffected.
+  fair: "#83602A",
   risk: "#B91C1C", // danger
 };
 

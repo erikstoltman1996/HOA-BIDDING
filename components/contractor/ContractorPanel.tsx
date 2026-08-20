@@ -8,7 +8,7 @@ import {
 } from "@/app/project/actions";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
-import { Mail, UserPlus, X } from "@/components/bid-ledger/icons";
+import { ChevronRight, Mail, UserPlus, X } from "@/components/bid-ledger/icons";
 
 export interface ContractorRow {
   id: string;
@@ -44,7 +44,8 @@ const STATUS_LABEL: Record<WeeklyUpdateRow["timeline_status"], string> = {
 const STATUS_COLOR: Record<WeeklyUpdateRow["timeline_status"], string> = {
   on_track: "#3F6B4E",
   ahead: "#3F6B4E",
-  delayed: "#B8863B",
+  // Gold darkened for text — see --color-gold-text in globals.css.
+  delayed: "#83602A",
 };
 
 const STALE_DAYS = 8;
@@ -68,7 +69,17 @@ export function ContractorPanel({
     <div className="mt-10 border-t-2 border-ink pt-6">
       <h2 className="mb-4 font-serif text-lg font-semibold text-ink">Contractor Updates</h2>
 
-      {isAdmin && <ContractorRoster projectId={projectId} contractors={contractors} />}
+      {isAdmin && (
+        <details className="group mb-6">
+          <summary className="flex cursor-pointer select-none items-center gap-1 text-sm font-medium text-ink-soft hover:text-ink">
+            <ChevronRight size={14} className="transition-transform group-open:rotate-90" />
+            Manage contractors
+          </summary>
+          <div className="mt-2">
+            <ContractorRoster projectId={projectId} contractors={contractors} />
+          </div>
+        </details>
+      )}
 
       {contractors.length === 0 ? (
         <p className="text-xs text-ink-soft">No contractor added yet — add one once a bid is awarded.</p>
@@ -130,7 +141,7 @@ function ContractorRoster({
               {c.contact_email && (
                 <button
                   onClick={() => startTransition(() => sendContractorReminder(c.id))}
-                  className="flex items-center gap-1 text-xs text-gold hover:opacity-80"
+                  className="flex items-center gap-1 text-xs text-gold-text hover:opacity-80"
                   disabled={isPending}
                 >
                   <Mail size={12} /> Remind
@@ -169,7 +180,7 @@ function ContractorRoster({
         Adding an email sends them their update link right away. No email? Add them anyway and copy
         their link later from the roster.
       </p>
-      {error && <p className="mt-2 text-xs text-red-700">{error}</p>}
+      {error && <p className="mt-2 text-xs text-danger">{error}</p>}
     </div>
   );
 }
@@ -199,7 +210,7 @@ function ContractorTimeline({
       <div className="mb-2 flex items-center justify-between">
         <span className="font-serif text-base text-ink">{contractor.name}</span>
         {isStale && (
-          <span className="rounded-full border border-gold px-2 py-0.5 text-xs font-medium text-gold">
+          <span className="rounded-full border border-gold px-2 py-0.5 text-xs font-medium text-gold-text">
             {hasNoUpdates ? "No updates yet" : `No update in ${daysSince} days`}
           </span>
         )}

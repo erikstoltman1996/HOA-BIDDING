@@ -8,7 +8,7 @@ import { Info } from "@/components/bid-ledger/icons";
 export function CheckinDisclaimer() {
   return (
     <div className="mb-4 flex items-start gap-1.5 rounded bg-gold-tint p-2.5 text-xs text-ink">
-      <Info size={14} className="mt-0.5 shrink-0 text-gold" />
+      <Info size={14} className="mt-0.5 shrink-0 text-gold-text" />
       <span>
         This gathers informal input only — <strong>it is not an official vote.</strong> Board
         votes on contracts generally must happen at a properly noticed meeting (or a formal

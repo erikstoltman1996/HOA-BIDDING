@@ -111,7 +111,7 @@ export function ResponseForm({
           />
         </div>
 
-        {error && <p className="text-xs text-red-700">{error}</p>}
+        {error && <p className="text-xs text-danger">{error}</p>}
 
         <Button type="submit" className="w-full" disabled={status === "saving" || !pick}>
           {status === "done" ? (

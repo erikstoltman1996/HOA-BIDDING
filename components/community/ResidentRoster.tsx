@@ -60,7 +60,7 @@ export function ResidentRoster({ residents }: { residents: ResidentRow[] }) {
               {r.contact_email && (
                 <button
                   onClick={() => startTransition(() => resendResidentInvite(r.id))}
-                  className="flex items-center gap-1 text-xs text-gold hover:opacity-80"
+                  className="flex items-center gap-1 text-xs text-gold-text hover:opacity-80"
                   disabled={isPending}
                 >
                   <Mail size={12} /> Resend
@@ -101,7 +101,7 @@ export function ResidentRoster({ residents }: { residents: ResidentRow[] }) {
         No email on file? Add them anyway, then share their personal link however you reach
         residents today — it&apos;s the same link every time.
       </p>
-      {error && <p className="mt-2 text-xs text-red-700">{error}</p>}
+      {error && <p className="mt-2 text-xs text-danger">{error}</p>}
     </div>
   );
 }

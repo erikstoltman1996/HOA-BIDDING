@@ -205,7 +205,7 @@ export function ContractorUpdateForm({
           )}
         </div>
 
-        {error && <p className="text-xs text-red-700">{error}</p>}
+        {error && <p className="text-xs text-danger">{error}</p>}
 
         <Button type="submit" className="w-full" disabled={isPending}>
           {isPending ? "Posting…" : "Post update"}

@@ -104,7 +104,7 @@ export function VoteForm({
           className="w-full rounded border border-rule bg-paper-card p-2 text-xs text-ink outline-none focus:border-ink"
         />
 
-        {error && <p className="text-xs text-red-700">{error}</p>}
+        {error && <p className="text-xs text-danger">{error}</p>}
 
         <Button type="submit" disabled={status === "saving" || !optionId} className="w-full">
           {status === "done" ? (
