@@ -116,7 +116,7 @@ no-login `/contractor/[token]` and `/vote/[token]` demo links.
 
 ## Tests
 
-`npm test` runs the unit test suite (Vitest, 96 cases across eight files):
+`npm test` runs the unit test suite (Vitest, 103 cases across seven files):
 
 - `lib/ReserveTrackerService.ts` (36 cases) — the reserve-fund projection calculator behind
   `/reserve`. Uses the standard reserve-study "component method": each asset's Fully Funded
@@ -134,16 +134,26 @@ no-login `/contractor/[token]` and `/vote/[token]` demo links.
   `calculateCollectionRate`, which is `paid / (paid + unpaid)` with **waived charges excluded
   from both the numerator and denominator** — a waiver never makes the collection rate look
   better than it is.
-- `lib/financialImportParser.ts` (18 cases) — including two regressions found by running the
-  parser against a real HOA's export during development: an empty "Prior Year Ending Bank
-  Balance" row matching before the real "End Bank Balance" row (fixed by preferring whichever
-  label match actually has populated data, not the first match), and a reserve-contribution
-  row that appeared *before* the row chosen as the month header (fixed by not restricting the
-  label search to rows after the header). Also covers `parseExpenseBreakdown()`: collecting
-  every category row between an expense section and its Total Expense row, mapping month
-  columns to real calendar periods (including a fiscal year crossing into the next calendar
-  year), and degrading to "add manually" rather than mislabeling dates when month columns
-  aren't in sequential order.
+- `lib/financialImportParser.ts` (35 cases) — handles two fundamentally different real-world
+  export shapes, detected automatically:
+  - A **monthly pivot** (categories as rows, months as column headers, pre-totaled) — a
+    board's own hand-built spreadsheet typically looks like this. Includes two regressions
+    found by running the parser against a real HOA's export during development: an empty
+    "Prior Year Ending Bank Balance" row matching before the real "End Bank Balance" row
+    (fixed by preferring whichever label match actually has populated data, not the first
+    match), and a reserve-contribution row that appeared *before* the row chosen as the month
+    header (fixed by not restricting the label search to rows after the header).
+  - A **flat transaction list** — QuickBooks' own native "Transaction List by Date" export
+    (`Date | Transaction Type | Account | Amount`, one row per real transaction), arguably the
+    more common real shape. Detected first (its header columns share no vocabulary with the
+    pivot shape's month names), then aggregated by `(Account, month-of-Date)` into the same
+    category-breakdown shape the pivot path produces — every consumer downstream (the preview
+    UI, `bulkApplyExpenseImport`) needs no awareness of which shape the source file actually
+    was. Deposit-type transactions are excluded (dues income is already tracked on `/dues`);
+    an Account containing "reserve" routes to the reserve-contribution signal instead of
+    becoming an expense category; a transaction list has no account-balance figure at all, so
+    the reserve importer says so explicitly rather than guessing one from an incomplete
+    transaction history.
 - `lib/expenses.ts` (4 cases), `lib/healthBand.ts` (9 cases), and `lib/csv.ts` (6 cases).
 
 The reserve and dues health indicators share the same green/gold/red band system via

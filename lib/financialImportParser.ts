@@ -13,12 +13,29 @@
  * Works on a generic 2D grid so it's agnostic to the file format — the
  * Server Action that calls this is responsible for turning an .xlsx (via
  * exceljs) or .csv (via papaparse) into this same Cell[][] shape first.
+ *
+ * Handles two fundamentally different real-world shapes:
+ *   - A monthly pivot/summary (categories as rows, months as columns,
+ *     pre-totaled) — a board's own hand-built spreadsheet typically looks
+ *     like this.
+ *   - A flat transaction list (one row per real transaction: date, type,
+ *     account, amount) — QuickBooks' own native "Transaction List by
+ *     Date" export looks like this, and is arguably the more common real
+ *     shape. Detected first (its header row is unambiguous — "Date",
+ *     "Account", "Amount" columns — and doesn't overlap with the pivot
+ *     shape's month-name header), aggregated by (account, month) into the
+ *     same category-breakdown shape the pivot path produces, so every
+ *     consumer downstream (the preview UI, bulkApplyExpenseImport) needs
+ *     no awareness of which shape the source file actually was.
  */
+
+import { periodKey } from "./dues";
 
 export type Cell =
   | string
   | number
   | boolean
+  | Date
   | null
   | undefined
   | { formula?: unknown; result?: unknown; text?: string; richText?: unknown };
@@ -102,6 +119,24 @@ function parseCleanedNumber(s: string): number | null {
   return negative ? -Math.abs(n) : n;
 }
 
+function cellDate(cell: Cell): Date | null {
+  if (cell instanceof Date) return Number.isNaN(cell.getTime()) ? null : cell;
+  if (typeof cell === "object" && cell !== null && "result" in cell) {
+    const r = cell.result;
+    if (r instanceof Date) return Number.isNaN(r.getTime()) ? null : r;
+    if (typeof r === "string") {
+      const d = new Date(r);
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+    return null;
+  }
+  if (typeof cell === "string" && cell.trim() !== "") {
+    const d = new Date(cell);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+}
+
 function isMonthLabel(cell: Cell): boolean {
   const s = cellText(cell).toLowerCase();
   return MONTH_NAMES.includes(s) || MONTH_ABBR.includes(s);
@@ -138,7 +173,139 @@ function rowLabel(row: Cell[], firstMonthCol: number): string {
     .join(" ");
 }
 
+// --- Transaction-list shape (e.g. QuickBooks' native "Transaction List
+// by Date" export) -----------------------------------------------------
+
+interface TransactionHeader {
+  rowIndex: number;
+  dateCol: number;
+  accountCol: number;
+  amountCol: number;
+  /** null if the file has no type column at all — still usable, just
+   *  can't tell income transactions apart from expense ones by type. */
+  typeCol: number | null;
+}
+
+/** A transaction list's header row is unambiguous — exact (case-
+ *  insensitive) "Date", "Account", "Amount" column labels — and shares no
+ *  vocabulary with the pivot shape's month-name header, so there's no
+ *  meaningful risk of the two detectors colliding on the same file. */
+function findTransactionHeaderRow(grid: Cell[][]): TransactionHeader | null {
+  for (let r = 0; r < grid.length; r++) {
+    const row = grid[r] ?? [];
+    let dateCol = -1;
+    let accountCol = -1;
+    let amountCol = -1;
+    let typeCol = -1;
+    row.forEach((cell, c) => {
+      const t = cellText(cell).toLowerCase().trim();
+      if (t === "date") dateCol = c;
+      else if (t === "account") accountCol = c;
+      else if (t === "amount") amountCol = c;
+      else if (t === "type" || t === "transaction type") typeCol = c;
+    });
+    if (dateCol >= 0 && accountCol >= 0 && amountCol >= 0) {
+      return { rowIndex: r, dateCol, accountCol, amountCol, typeCol: typeCol >= 0 ? typeCol : null };
+    }
+  }
+  return null;
+}
+
+// QuickBooks' own transaction-type vocabulary for money coming in. Dues
+// income is already tracked elsewhere in the app (the Dues page), so
+// these are excluded from the expense breakdown entirely rather than
+// showing up as a (nonsensical) negative-looking "expense category."
+const INCOME_TRANSACTION_TYPES = new Set([
+  "deposit", "sales receipt", "invoice", "payment", "sales", "received payment",
+]);
+
+export interface TransactionListAggregate {
+  expenseCategories: DetectedExpenseCategory[];
+  contribution: DetectedContribution | null;
+  warnings: string[];
+}
+
+/**
+ * Aggregates a flat transaction list by (Account, calendar month of Date),
+ * splitting reserve-related transactions (an Account containing "reserve",
+ * e.g. "Capital Reserve Transfer") into a contribution signal and
+ * everything else into expense categories — the same shape
+ * parseExpenseBreakdown produces from a pivot file, so downstream code
+ * never needs to know which shape the source file actually was.
+ */
+export function aggregateTransactionList(grid: Cell[][]): TransactionListAggregate {
+  const warnings: string[] = [];
+  const header = findTransactionHeaderRow(grid);
+  if (!header) {
+    return { expenseCategories: [], contribution: null, warnings: [] };
+  }
+
+  const expenseTotals = new Map<string, Map<string, number>>(); // account -> period -> sum
+  const reserveTotals = new Map<string, number>(); // period -> sum
+
+  for (let r = header.rowIndex + 1; r < grid.length; r++) {
+    const row = grid[r] ?? [];
+    const date = cellDate(row[header.dateCol]);
+    const account = cellText(row[header.accountCol]).trim();
+    const amount = cellNumber(row[header.amountCol]);
+    if (!date || !account || amount === null) continue;
+
+    const type = header.typeCol !== null ? cellText(row[header.typeCol]).toLowerCase().trim() : "";
+    if (INCOME_TRANSACTION_TYPES.has(type)) continue;
+
+    const period = periodKey(date);
+
+    if (RESERVE_WORD_RE.test(account)) {
+      reserveTotals.set(period, (reserveTotals.get(period) ?? 0) + amount);
+      continue;
+    }
+
+    if (!expenseTotals.has(account)) expenseTotals.set(account, new Map());
+    const perPeriod = expenseTotals.get(account)!;
+    perPeriod.set(period, (perPeriod.get(period) ?? 0) + amount);
+  }
+
+  const expenseCategories: DetectedExpenseCategory[] = [...expenseTotals.entries()].map(([label, periods]) => ({
+    label,
+    entries: [...periods.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([period, amount]) => ({ period, amount })),
+  }));
+
+  let contribution: DetectedContribution | null = null;
+  if (reserveTotals.size > 0) {
+    const sum = [...reserveTotals.values()].reduce((a, b) => a + b, 0);
+    const count = reserveTotals.size;
+    const annualized = count < 12;
+    contribution = { value: annualized ? sum * (12 / count) : sum, monthsFound: count, annualized };
+  } else {
+    warnings.push(
+      'Couldn\'t find any reserve-related transactions (an Account containing "reserve") — enter the annual contribution manually.',
+    );
+  }
+
+  if (expenseCategories.length === 0) {
+    warnings.push("No expense transactions found in this file.");
+  }
+
+  return { expenseCategories, contribution, warnings };
+}
+
 export function parseFinancialImport(grid: Cell[][]): ParsedFinancialImport {
+  const transactionHeader = findTransactionHeaderRow(grid);
+  if (transactionHeader) {
+    const agg = aggregateTransactionList(grid);
+    return {
+      detectedBalance: null,
+      detectedContribution: agg.contribution,
+      warnings: [
+        "This looks like a transaction list, not a monthly summary — it records individual " +
+          "transactions, not an account balance. Enter the current balance manually.",
+        ...agg.warnings,
+      ],
+    };
+  }
+
   const warnings: string[] = [];
   const header = findMonthHeaderRow(grid);
 
@@ -267,8 +434,17 @@ function monthIndex(name: string): number {
  * sequential (true of every real export seen so far); if they're not,
  * this degrades to an empty result with a warning rather than silently
  * mislabeling periods.
+ *
+ * `startYear` is only used for the pivot-file path — a transaction list
+ * carries a real date per row, so its periods need no anchor year at all.
  */
 export function parseExpenseBreakdown(grid: Cell[][], startYear: number): ParsedExpenseBreakdown {
+  const transactionHeader = findTransactionHeaderRow(grid);
+  if (transactionHeader) {
+    const agg = aggregateTransactionList(grid);
+    return { categories: agg.expenseCategories, warnings: agg.warnings };
+  }
+
   const warnings: string[] = [];
   const header = findMonthHeaderRow(grid);
 

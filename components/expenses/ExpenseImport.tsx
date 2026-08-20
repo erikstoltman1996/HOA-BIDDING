@@ -10,12 +10,14 @@ import { formatPeriodLabel } from "@/lib/dues";
 /**
  * Uploads a monthly income/expense export and bulk-imports its whole
  * expense section — every category, every month found — rather than just
- * the two summary numbers the reserve importer pulls out. See
- * lib/financialImportParser.ts's parseExpenseBreakdown for the detection
- * logic (label-based, degrades to "add manually" on an unrecognized
- * layout) and app/expenses/actions.ts for why a starting year has to be
- * supplied by hand: a spreadsheet labels columns with a month name, never
- * a year, so there's no way to recover it from the file alone.
+ * the two summary numbers the reserve importer pulls out. Handles two
+ * shapes: a QuickBooks-style transaction list (each row already carries a
+ * real date, grouped by Account) needs nothing else and ignores the year
+ * field entirely; a hand-built monthly pivot (categories as rows, months
+ * as column headers with no year in them) needs the starting year to
+ * anchor its periods — see lib/financialImportParser.ts for the
+ * detection logic (label-based, degrades to "add manually" on a layout
+ * neither shape matches).
  */
 export function ExpenseImport() {
   const currentYear = new Date().getFullYear();
@@ -28,12 +30,12 @@ export function ExpenseImport() {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    const year = Number(startYear);
-    if (!Number.isFinite(year) || year < 2000 || year > 2100) {
-      setStatus("error");
-      setError("Enter a valid starting year first.");
-      return;
-    }
+    // Only matters for a monthly-pivot file (a transaction list carries
+    // its own real dates and ignores this) — so an empty/invalid value
+    // just falls back to the current year rather than blocking the
+    // upload on a field that may not even apply to this file.
+    const parsedYear = Number(startYear);
+    const year = Number.isFinite(parsedYear) && parsedYear >= 2000 && parsedYear <= 2100 ? parsedYear : currentYear;
     setStatus("parsing");
     setError("");
     setResult(null);
@@ -66,13 +68,14 @@ export function ExpenseImport() {
   return (
     <div className="rounded border border-rule bg-paper-card shadow-card p-3">
       <p className="mb-2 text-xs text-ink-soft">
-        Upload a monthly expense export (CSV or XLSX) to bulk-import categories and their
-        monthly amounts, instead of adding them one at a time. Nothing is saved until you review
-        the list below and click Apply — the file itself is never stored.
+        Upload a QuickBooks transaction export or a monthly expense spreadsheet (CSV or XLSX) to
+        bulk-import categories and their monthly amounts, instead of adding them one at a time.
+        Nothing is saved until you review the list below and click Apply — the file itself is
+        never stored.
       </p>
       <div className="mb-2 flex flex-wrap items-end gap-2">
-        <div className="w-28">
-          <Label htmlFor="expense-import-year">First column&apos;s year</Label>
+        <div className="w-32">
+          <Label htmlFor="expense-import-year">Spreadsheet&apos;s year</Label>
           <Input
             id="expense-import-year"
             inputMode="numeric"
@@ -80,6 +83,10 @@ export function ExpenseImport() {
             onChange={(e) => setStartYear(e.target.value)}
             className="font-mono"
           />
+          <p className="mt-0.5 text-[10px] leading-tight text-ink-soft">
+            Only used for month-column spreadsheets — ignored for a QuickBooks transaction list,
+            which already has real dates.
+          </p>
         </div>
         <div>
           <Label htmlFor="expense-import-file">File</Label>

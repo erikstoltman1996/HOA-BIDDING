@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { parseExpenseBreakdown, parseFinancialImport, type Cell } from "./financialImportParser";
+import {
+  aggregateTransactionList,
+  parseExpenseBreakdown,
+  parseFinancialImport,
+  type Cell,
+} from "./financialImportParser";
 
 // Shaped like the real sample export: title row, month-header row starting
 // in July (not January), an item-number + description two-column label,
@@ -236,5 +241,84 @@ describe("parseExpenseBreakdown", () => {
     const result = parseExpenseBreakdown(grid, 2026);
     expect(result.categories).toHaveLength(1);
     expect(result.warnings.some((w) => w.includes("more than a year"))).toBe(true);
+  });
+});
+
+// Shaped exactly like QuickBooks' native "Transaction List by Date"
+// export: one row per real transaction, no month columns at all — the
+// fundamentally different real-world shape from the pivot fixture above.
+function transactionListGrid(): Cell[][] {
+  return [
+    ["W. Elmhurst Condo Association"],
+    ["Transaction List by Date"],
+    ["January - June 2026"],
+    [],
+    ["Date", "Transaction Type", "Num", "Name", "Memo/Description", "Account", "Split", "Amount"],
+    ["2026-01-05", "Deposit", "", "Unit A", "Monthly HOA dues", "HOA Dues Income", "Operating Checking", 450],
+    ["2026-01-05", "Deposit", "", "Unit B", "Monthly HOA dues", "HOA Dues Income", "Operating Checking", 450],
+    ["2026-01-06", "Journal Entry", "", "W. Elmhurst Condo Association", "Monthly reserve contribution", "Capital Reserve Transfer", "Reserve Savings", 800],
+    ["2026-01-15", "Check", "", "Bookkeeping Service", "Bookkeeping Fees - 2026-01", "Bookkeeping Fees", "Operating Checking", 120],
+    ["2026-01-15", "Check", "", "Pest Control Co", "Pest Control - 2026-01", "Pest Control", "Operating Checking", 55],
+    ["2026-02-05", "Deposit", "", "Unit A", "Monthly HOA dues", "HOA Dues Income", "Operating Checking", 450],
+    ["2026-02-06", "Journal Entry", "", "W. Elmhurst Condo Association", "Monthly reserve contribution", "Capital Reserve Transfer", "Reserve Savings", 800],
+    ["2026-02-15", "Check", "", "Bookkeeping Service", "Bookkeeping Fees - 2026-02", "Bookkeeping Fees", "Operating Checking", 120],
+    ["2026-02-15", "Check", "", "Pest Control Co", "Pest Control - 2026-02", "Pest Control", "Operating Checking", 60],
+    [null, null, null, null, null, null, "Total", { formula: "SUM(H6:H13)", result: 3305 }],
+  ];
+}
+
+describe("aggregateTransactionList", () => {
+  it("groups expense transactions by account and month", () => {
+    const result = aggregateTransactionList(transactionListGrid());
+    const bookkeeping = result.expenseCategories.find((c) => c.label === "Bookkeeping Fees");
+    expect(bookkeeping?.entries).toEqual([
+      { period: "2026-01-01", amount: 120 },
+      { period: "2026-02-01", amount: 120 },
+    ]);
+    const pest = result.expenseCategories.find((c) => c.label === "Pest Control");
+    expect(pest?.entries).toEqual([
+      { period: "2026-01-01", amount: 55 },
+      { period: "2026-02-01", amount: 60 },
+    ]);
+  });
+
+  it("excludes Deposit (income) transactions from expense categories entirely", () => {
+    const result = aggregateTransactionList(transactionListGrid());
+    expect(result.expenseCategories.some((c) => c.label === "HOA Dues Income")).toBe(false);
+  });
+
+  it("routes an account containing \"reserve\" to the contribution signal, not an expense category", () => {
+    const result = aggregateTransactionList(transactionListGrid());
+    expect(result.expenseCategories.some((c) => c.label === "Capital Reserve Transfer")).toBe(false);
+    expect(result.contribution).toEqual({ value: 800 * 12, monthsFound: 2, annualized: true });
+  });
+
+  it("returns nothing (not an error) when the grid has no transaction-list header", () => {
+    const result = aggregateTransactionList([["some", "random", "sheet"]]);
+    expect(result.expenseCategories).toEqual([]);
+    expect(result.contribution).toBeNull();
+  });
+});
+
+describe("parseFinancialImport on a transaction list", () => {
+  it("never guesses a balance from a transaction list — says so explicitly", () => {
+    const result = parseFinancialImport(transactionListGrid());
+    expect(result.detectedBalance).toBeNull();
+    expect(result.warnings.some((w) => w.includes("transaction list"))).toBe(true);
+  });
+
+  it("still detects the reserve contribution from reserve-labeled transactions", () => {
+    const result = parseFinancialImport(transactionListGrid());
+    expect(result.detectedContribution?.value).toBeCloseTo(800 * 12);
+  });
+});
+
+describe("parseExpenseBreakdown on a transaction list", () => {
+  it("produces categories straight from the transactions, ignoring startYear entirely", () => {
+    // startYear is meaningless here — every transaction already carries its
+    // own real date — passing an obviously-wrong one proves it's unused.
+    const result = parseExpenseBreakdown(transactionListGrid(), 1999);
+    const bookkeeping = result.categories.find((c) => c.label === "Bookkeeping Fees");
+    expect(bookkeeping?.entries[0].period).toBe("2026-01-01");
   });
 });
