@@ -11,23 +11,8 @@ import { DuesTable } from "@/components/dues/DuesTable";
 import { NewProjectButton } from "@/components/project/NewProjectButton";
 import { computeBidSummary, formatBidSummary } from "@/lib/projectSummary";
 import { PROJECT_STATUS_COLOR, PROJECT_STATUS_LABEL } from "@/lib/projectStatus";
+import { TIMELINE_STATUS_COLOR, TIMELINE_STATUS_LABEL, type TimelineStatus } from "@/lib/timelineStatus";
 import { ArrowRight, ClipboardList } from "@/components/bid-ledger/icons";
-import type { Database } from "@/types/database";
-
-type TimelineStatus = Database["public"]["Tables"]["weekly_updates"]["Row"]["timeline_status"];
-
-const STATUS_LABEL: Record<TimelineStatus, string> = {
-  on_track: "On track",
-  ahead: "Ahead of schedule",
-  delayed: "Delayed",
-};
-
-const STATUS_COLOR: Record<TimelineStatus, string> = {
-  on_track: "#3F6B4E",
-  ahead: "#3F6B4E",
-  // Gold darkened for text — see --color-gold-text in globals.css.
-  delayed: "#83602A",
-};
 
 export default async function HomePage() {
   const { authUser, profile } = await requireUser();
@@ -320,10 +305,15 @@ export default async function HomePage() {
                         <span className="font-medium">{latestUpdate.contractorName}</span>{" "}
                         <span className="font-mono">{latestUpdate.percentComplete}% complete</span>
                       </p>
-                      <p className="text-xs text-ink-soft">
-                        <span style={{ color: STATUS_COLOR[latestUpdate.timelineStatus] }} className="font-medium">
-                          {STATUS_LABEL[latestUpdate.timelineStatus]}
-                        </span>{" "}
+                      <p className="flex items-center gap-1.5 text-xs text-ink-soft">
+                        <span
+                          className="h-1.5 w-1.5 shrink-0 rounded-full"
+                          style={{ background: TIMELINE_STATUS_COLOR[latestUpdate.timelineStatus] }}
+                          aria-hidden
+                        />
+                        <span style={{ color: TIMELINE_STATUS_COLOR[latestUpdate.timelineStatus] }} className="font-medium">
+                          {TIMELINE_STATUS_LABEL[latestUpdate.timelineStatus]}
+                        </span>
                         · {new Date(latestUpdate.createdAt).toLocaleDateString()}
                         {latestUpdate.nextMilestoneDate
                           ? ` · Next milestone ${new Date(latestUpdate.nextMilestoneDate).toLocaleDateString()}`

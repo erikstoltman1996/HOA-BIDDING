@@ -273,10 +273,16 @@ function CheckinHistoryCard({
 
   return (
     <div className="rounded border border-rule bg-paper-card shadow-card p-3">
-      <div className="mb-2 flex items-center justify-between">
-        <div className="text-xs text-ink-soft">
-          Sent {new Date(checkin.created_at).toLocaleDateString()}
-          {checkin.respond_by ? ` · respond by ${checkin.respond_by}` : ""}
+      <div className="mb-2 flex items-start justify-between">
+        <div>
+          <div className="font-mono text-2xl font-bold leading-none text-ink">
+            {responded.length}
+            <span className="text-sm font-normal text-ink-soft"> of {checkin.responses.length} replied</span>
+          </div>
+          <div className="mt-1 text-xs text-ink-soft">
+            Sent {new Date(checkin.created_at).toLocaleDateString()}
+            {checkin.respond_by ? ` · respond by ${checkin.respond_by}` : ""}
+          </div>
         </div>
         {isAdmin && pending.length > 0 && (
           <button
@@ -287,15 +293,11 @@ function CheckinHistoryCard({
               })
             }
             disabled={isPending}
-            className="flex items-center gap-1 text-xs text-gold-text hover:opacity-80"
+            className="flex shrink-0 items-center gap-1 text-xs text-gold-text hover:opacity-80"
           >
             <Mail size={12} /> {reminded ? "Reminder sent" : `Remind ${pending.length}`}
           </button>
         )}
-      </div>
-
-      <div className="mb-2 text-xs text-ink-soft">
-        {responded.length} of {checkin.responses.length} replied
       </div>
 
       <div className="mb-2 flex flex-wrap gap-2">
@@ -316,13 +318,23 @@ function CheckinHistoryCard({
           ))}
       </div>
 
-      <ul className="space-y-1 text-xs text-ink-soft">
+      <ul className="space-y-1 text-xs">
         {checkin.responses.map((r) => {
           const pick = bids.find((b) => b.id === r.pick_bid_id);
+          const hasResponded = !!r.responded_at;
           return (
-            <li key={r.id} className="flex items-center justify-between">
-              <span className="text-ink">{r.name}</span>
-              <span>{pick ? pick.vendor : "Awaiting reply"}</span>
+            <li key={r.id} className="flex items-center justify-between gap-2">
+              <span className="flex items-center gap-1.5 text-ink">
+                <span
+                  className="h-1.5 w-1.5 shrink-0 rounded-full"
+                  style={{ background: hasResponded ? "#3F6B4E" : "#C8C2B4" }}
+                  aria-hidden
+                />
+                {r.name}
+              </span>
+              <span className={hasResponded ? "text-ink" : "text-ink-soft"}>
+                {pick ? pick.vendor : "Awaiting reply"}
+              </span>
             </li>
           );
         })}

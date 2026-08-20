@@ -388,7 +388,7 @@ function OutlookTable({ outlook }: { outlook: YearProjection[] }) {
           <tr>
             {["Year", "Start", "+Contribution", "+Interest", "-Replacements", "End", "Fully funded", "% Funded"].map(
               (h) => (
-                <th key={h} className="border-b-2 border-ink p-2 text-left text-xs font-medium text-ink-soft">
+                <th key={h} className="border-b-2 border-ink p-2 text-right text-xs font-medium text-ink-soft">
                   {h}
                 </th>
               ),
@@ -398,26 +398,26 @@ function OutlookTable({ outlook }: { outlook: YearProjection[] }) {
         <tbody>
           {outlook.map((y) => (
             <tr key={y.year}>
-              <td className="border-t border-rule p-2 font-mono text-ink">{y.year}</td>
-              <td className="border-t border-rule p-2 font-mono text-ink-soft">{fmt(y.startingBalance)}</td>
-              <td className="border-t border-rule p-2 font-mono text-check-green">
+              <td className="border-t border-rule p-2 text-right font-mono text-ink">{y.year}</td>
+              <td className="border-t border-rule p-2 text-right font-mono text-ink-soft">{fmt(y.startingBalance)}</td>
+              <td className="border-t border-rule p-2 text-right font-mono text-check-green">
                 {y.contributions > 0 ? `+${fmt(y.contributions)}` : "—"}
               </td>
-              <td className="border-t border-rule p-2 font-mono text-check-green">
+              <td className="border-t border-rule p-2 text-right font-mono text-check-green">
                 {y.interestEarned > 0 ? `+${fmt(y.interestEarned)}` : "—"}
               </td>
-              <td className="border-t border-rule p-2 font-mono text-ink-soft">
+              <td className="border-t border-rule p-2 text-right font-mono text-ink-soft">
                 {y.plannedExpenditures > 0 ? `-${fmt(y.plannedExpenditures)}` : "—"}
                 {y.assetsReplaced.length > 0 && (
                   <span className="ml-1 text-xs">({y.assetsReplaced.join(", ")})</span>
                 )}
               </td>
-              <td className="border-t border-rule p-2 font-mono font-semibold text-ink">
+              <td className="border-t border-rule p-2 text-right font-mono font-semibold text-ink">
                 {fmt(y.endingBalance)}
               </td>
-              <td className="border-t border-rule p-2 font-mono text-ink-soft">{fmt(y.fullyFundedBalance)}</td>
+              <td className="border-t border-rule p-2 text-right font-mono text-ink-soft">{fmt(y.fullyFundedBalance)}</td>
               <td
-                className="border-t border-rule p-2 font-mono font-semibold"
+                className="border-t border-rule p-2 text-right font-mono font-semibold"
                 style={{ color: healthBandColor(y.percentFunded) }}
               >
                 {y.percentFunded.toFixed(0)}%

@@ -5,10 +5,12 @@ import { fmt } from "@/lib/money";
 /**
  * The at-a-glance strip for /dues and the Home dashboard's Dues section:
  * four numbers a volunteer treasurer can read in a couple seconds, ahead
- * of anything else on the page (setup forms, per-unit detail). Only the
- * collection rate is color-banded — it's the one number here with an
- * inherent good/bad threshold; raw dollar totals and a plain overdue
- * count don't, so they stay neutral ink.
+ * of anything else on the page (setup forms, per-unit detail). Collection
+ * rate is both color-banded AND visually larger than its neighbors — it's
+ * the one number here that answers "are we okay on dues," so it should
+ * dominate the way Reserve's "Funded today" does, not just be tinted
+ * differently from Collected/Outstanding/Overdue, which don't have an
+ * inherent good/bad threshold and stay neutral ink at the smaller size.
  */
 export function DuesSummary({ summary }: { summary: DuesSummaryData }) {
   return (
@@ -17,6 +19,7 @@ export function DuesSummary({ summary }: { summary: DuesSummaryData }) {
         label="Collection rate"
         value={`${summary.collectionRate.toFixed(0)}%`}
         color={healthBandColor(summary.collectionRate, DUES_COLLECTION_THRESHOLDS)}
+        dominant
       />
       <Stat label="Collected" value={fmt(summary.totalCollected)} />
       <Stat label="Outstanding" value={fmt(summary.totalOutstanding)} />
@@ -32,11 +35,24 @@ export function DuesSummary({ summary }: { summary: DuesSummaryData }) {
   );
 }
 
-function Stat({ label, value, color }: { label: string; value: string; color?: string }) {
+function Stat({
+  label,
+  value,
+  color,
+  dominant = false,
+}: {
+  label: string;
+  value: string;
+  color?: string;
+  dominant?: boolean;
+}) {
   return (
     <div className="rounded border border-rule bg-paper-card p-3 shadow-card">
       <div className="mb-1 text-xs uppercase tracking-wide text-ink-soft">{label}</div>
-      <div className="font-mono text-lg font-semibold" style={color ? { color } : { color: "#1F2B3D" }}>
+      <div
+        className={`font-mono font-bold ${dominant ? "text-2xl" : "text-lg font-semibold"}`}
+        style={color ? { color } : { color: "#1F2B3D" }}
+      >
         {value}
       </div>
     </div>

@@ -53,7 +53,12 @@ export function DuesTable({
         <thead>
           <tr>
             {["Unit", "Owner", "Amount", "Status"].map((h) => (
-              <th key={h} className="border-b-2 border-ink p-2 text-left text-xs font-medium text-ink-soft">
+              <th
+                key={h}
+                className={`border-b-2 border-ink p-2 text-xs font-medium text-ink-soft ${
+                  h === "Amount" ? "text-right" : "text-left"
+                }`}
+              >
                 {h}
               </th>
             ))}
@@ -65,7 +70,7 @@ export function DuesTable({
             <tr key={c.id}>
               <td className="border-t border-rule p-2 text-ink">{c.unitLabel}</td>
               <td className="border-t border-rule p-2 text-ink-soft">{c.ownerName}</td>
-              <td className="border-t border-rule p-2 font-mono text-ink">{fmt(c.amountDue)}</td>
+              <td className="border-t border-rule p-2 text-right font-mono text-ink">{fmt(c.amountDue)}</td>
               <td className="border-t border-rule p-2">
                 {c.status === "paid" && (
                   <span className="flex items-center gap-1 text-check-green">

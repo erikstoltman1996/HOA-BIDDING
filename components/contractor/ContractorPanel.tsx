@@ -9,6 +9,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { ChevronRight, Mail, UserPlus, X } from "@/components/bid-ledger/icons";
+import { TIMELINE_STATUS_COLOR, TIMELINE_STATUS_LABEL } from "@/lib/timelineStatus";
 
 export interface ContractorRow {
   id: string;
@@ -34,19 +35,6 @@ export interface WeeklyUpdateRow {
   created_at: string;
   photos: PhotoRow[];
 }
-
-const STATUS_LABEL: Record<WeeklyUpdateRow["timeline_status"], string> = {
-  on_track: "On track",
-  ahead: "Ahead of schedule",
-  delayed: "Delayed",
-};
-
-const STATUS_COLOR: Record<WeeklyUpdateRow["timeline_status"], string> = {
-  on_track: "#3F6B4E",
-  ahead: "#3F6B4E",
-  // Gold darkened for text — see --color-gold-text in globals.css.
-  delayed: "#83602A",
-};
 
 const STALE_DAYS = 8;
 
@@ -224,8 +212,15 @@ function ContractorTimeline({
             <li key={u.id} className="border-t border-rule pt-3 first:border-t-0 first:pt-0">
               <div className="mb-1 flex flex-wrap items-center gap-2 text-xs">
                 <span className="font-mono text-ink">{u.percent_complete}% complete</span>
-                <span style={{ color: STATUS_COLOR[u.timeline_status] }} className="font-medium">
-                  {STATUS_LABEL[u.timeline_status]}
+                <span className="flex items-center gap-1.5">
+                  <span
+                    className="h-1.5 w-1.5 shrink-0 rounded-full"
+                    style={{ background: TIMELINE_STATUS_COLOR[u.timeline_status] }}
+                    aria-hidden
+                  />
+                  <span style={{ color: TIMELINE_STATUS_COLOR[u.timeline_status] }} className="font-medium">
+                    {TIMELINE_STATUS_LABEL[u.timeline_status]}
+                  </span>
                 </span>
                 <span className="text-ink-soft">· {new Date(u.created_at).toLocaleDateString()}</span>
                 {u.next_milestone_date && (

@@ -338,7 +338,7 @@ export function BidLedgerClient({
                     const isLowest = v !== null && rowLowest !== null && v === rowLowest;
                     return (
                       <td key={b.id} className="border-t border-rule border-l border-l-rule p-3">
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center justify-end gap-1.5">
                           <span className="font-mono text-ink-soft">$</span>
                           {isAdmin ? (
                             <input
@@ -346,7 +346,7 @@ export function BidLedgerClient({
                               onChange={(e) => handleAmountChange(b.id, it.id, e.target.value)}
                               inputMode="decimal"
                               placeholder="0"
-                              className="w-full bg-transparent font-mono outline-none"
+                              className="w-full bg-transparent text-right font-mono outline-none"
                               style={{
                                 color: isLowest ? "#3F6B4E" : "#1F2B3D",
                                 fontWeight: isLowest ? 700 : 400,
@@ -372,7 +372,7 @@ export function BidLedgerClient({
             <tr>
               <td className="border-t-2 border-ink p-3 font-serif font-semibold">Total</td>
               {bids.map((b, i) => (
-                <td key={b.id} className="border-t-2 border-ink border-l border-l-rule p-3">
+                <td key={b.id} className="border-t-2 border-ink border-l border-l-rule p-3 text-right">
                   <span
                     className="font-mono font-serif text-base font-bold"
                     // Gold darkened for text — see --color-gold-text in globals.css.
@@ -390,14 +390,14 @@ export function BidLedgerClient({
                 const isBest =
                   b.warranty_years !== null && longestWarranty !== null && b.warranty_years === longestWarranty;
                 return (
-                  <td key={b.id} className="border-t border-rule border-l border-l-rule p-3">
+                  <td key={b.id} className="border-t border-rule border-l border-l-rule p-3 text-right">
                     {isAdmin ? (
                       <input
                         value={b.warranty_years ?? ""}
                         onChange={(e) => handleBidNumberFieldChange(b.id, "warranty_years", e.target.value)}
                         inputMode="decimal"
                         placeholder="—"
-                        className="w-16 bg-transparent font-mono outline-none"
+                        className="w-16 bg-transparent text-right font-mono outline-none"
                         style={{ color: isBest ? "#3F6B4E" : "#1F2B3D", fontWeight: isBest ? 700 : 400 }}
                       />
                     ) : (
@@ -419,14 +419,14 @@ export function BidLedgerClient({
                 const isBest =
                   b.timeline_weeks !== null && shortestTimeline !== null && b.timeline_weeks === shortestTimeline;
                 return (
-                  <td key={b.id} className="border-t border-rule border-l border-l-rule p-3">
+                  <td key={b.id} className="border-t border-rule border-l border-l-rule p-3 text-right">
                     {isAdmin ? (
                       <input
                         value={b.timeline_weeks ?? ""}
                         onChange={(e) => handleBidNumberFieldChange(b.id, "timeline_weeks", e.target.value)}
                         inputMode="decimal"
                         placeholder="—"
-                        className="w-16 bg-transparent font-mono outline-none"
+                        className="w-16 bg-transparent text-right font-mono outline-none"
                         style={{ color: isBest ? "#3F6B4E" : "#1F2B3D", fontWeight: isBest ? 700 : 400 }}
                       />
                     ) : (
