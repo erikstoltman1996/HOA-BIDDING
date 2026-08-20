@@ -218,3 +218,43 @@ Both use the same green/gold/red health-band thresholds (70% / 30%) via `lib/hea
 The app is a standard Next.js app — deploys to [Vercel](https://vercel.com) with no extra
 config. Set the same environment variables in the Vercel project settings, and update
 `NEXT_PUBLIC_SITE_URL` and Supabase's redirect URLs to your production domain.
+
+## Production readiness
+
+Things worth doing before a real HOA's data lives in this, roughly in order:
+
+**CI (done).** `.github/workflows/ci.yml` runs lint, typecheck, tests, and a full build on
+every push and PR. It needs no secrets — verified that `next build` succeeds with zero
+Supabase/Resend env vars present, since no route fetches data at build/static-generation
+time (everything data-dependent is server-rendered per request, not pre-rendered).
+
+**Separate prod Supabase project (not done — needs you).** Right now there's one Supabase
+project doing double duty as both the demo/testing database and (if you deploy this
+somewhere real) production. Before a real HOA's data goes in:
+
+1. Create a new project at [supabase.com](https://supabase.com) — pick a real name (e.g.
+   the org name, not "demo").
+2. Run all five migrations from `supabase/migrations/` against it, in order, in the SQL
+   editor (same process as the first setup — see [§2](#2-set-up-the-database) above).
+3. Grab that project's URL, publishable key, and secret key from Project Settings → API.
+4. Set those as the env vars on your production Vercel deployment (keep the old project's
+   keys for local dev/demo only).
+5. **Don't run `npm run seed` against it** — that script exists for demo data only.
+
+**Error monitoring.**
+- **Available today, zero setup:** Vercel's own dashboard (Deployments → a deployment →
+  Runtime Logs, and the Observability tab) already shows errors and exceptions thrown in
+  server-side code for any deployment on Vercel. Worth checking there before adding
+  anything else.
+- **For richer tracking** (client-side errors, stack traces with source maps, alerting,
+  error grouping over time): add [Sentry](https://sentry.io). Not wired into the code yet
+  — it needs a real account and DSN first, and its Next.js SDK setup is specific to the
+  exact Next.js/Sentry versions in use, which is worth getting right against a real
+  account rather than guessing. Once you have a Sentry project: `npx @sentry/wizard@latest
+  -i nextjs` from the repo root walks through it interactively and wires it up correctly
+  for this Next.js version.
+
+**Rate limiting on public token pages.** `/checkin/[token]`, `/contractor/[token]`, and
+`/vote/[token]` have no rate limiting — nothing stops automated hammering of those routes
+today. Worth adding (e.g. Vercel's own rate-limiting, or Upstash) before this is used by
+people outside your own testing.
