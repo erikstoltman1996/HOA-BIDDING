@@ -119,7 +119,6 @@ export default async function HomePage() {
       }
     }
   }
-  const activeProjectCount = project && project.status !== "complete" ? 1 : 0;
 
   let percentFundedToday: number | null = null;
   if (settings) {
@@ -165,27 +164,20 @@ export default async function HomePage() {
         </div>
 
         {/* Top stat row */}
-        <div className="mb-10 grid grid-cols-1 gap-5 sm:grid-cols-3">
+        <div className="mb-10 grid grid-cols-1 gap-5 sm:grid-cols-2">
           <StatTile
             href="/reserve"
-            label="Reserve fund"
+            label="Reserve Fund"
             value={percentFundedToday !== null ? `${percentFundedToday.toFixed(0)}%` : "—"}
             sublabel="funded today"
             color={percentFundedToday !== null ? healthBandColor(percentFundedToday) : "#5B6578"}
           />
           <StatTile
             href="/dues"
-            label="Dues collected"
+            label="Dues Collection Rate"
             value={`${collectionRate.toFixed(0)}%`}
             sublabel={formatPeriodLabel(period)}
             color={healthBandColor(collectionRate)}
-          />
-          <StatTile
-            href="/project"
-            label="Active projects"
-            value={String(activeProjectCount)}
-            sublabel={activeProjectCount === 1 ? "capital project" : "capital projects"}
-            color="#B8863B"
           />
         </div>
 
