@@ -27,10 +27,19 @@ const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
 
 const DEMO_PASSWORD = "BidLedgerDemo123!";
 
-const DEMO_ADMIN = { email: "admin@demo.bidledger.app", name: "Jordan Kim" };
+// Overridable so a second, untouched demo org can be seeded on demand
+// (npm run seed) without touching the primary demo org's data — e.g.
+// `SEED_ORG_NAME="Fresh Test HOA" SEED_ADMIN_EMAIL=admin2@demo.bidledger.app
+// SEED_ADMIN_PREFIX=admin2 npm run seed`.
+const ORG_NAME = process.env.SEED_ORG_NAME || "Elmhurst HOA";
+const EMAIL_PREFIX = process.env.SEED_ADMIN_PREFIX || "";
+const DEMO_ADMIN = {
+  email: process.env.SEED_ADMIN_EMAIL || `${EMAIL_PREFIX}admin@demo.bidledger.app`,
+  name: "Jordan Kim",
+};
 const DEMO_BOARD_MEMBERS = [
-  { email: "pat@demo.bidledger.app", name: "Pat Rivera" },
-  { email: "sam@demo.bidledger.app", name: "Sam Chen" },
+  { email: `${EMAIL_PREFIX}pat@demo.bidledger.app`, name: "Pat Rivera" },
+  { email: `${EMAIL_PREFIX}sam@demo.bidledger.app`, name: "Sam Chen" },
 ];
 
 async function getOrCreateAuthUser(email: string, name: string) {
@@ -65,7 +74,7 @@ async function main() {
   if (!orgId) {
     const { data: org, error: orgError } = await admin
       .from("organizations")
-      .insert({ name: "Elmhurst HOA" })
+      .insert({ name: ORG_NAME })
       .select()
       .single();
     if (orgError) throw orgError;
