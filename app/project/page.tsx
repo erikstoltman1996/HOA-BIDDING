@@ -7,6 +7,7 @@ import { CheckinPanel, type CheckinRow } from "@/components/checkin/CheckinPanel
 import { ContractorPanel, type WeeklyUpdateRow } from "@/components/contractor/ContractorPanel";
 import { AppHeader } from "@/components/AppHeader";
 import { SectionNav } from "@/components/SectionNav";
+import { exportBidComparisonCsv } from "./actions";
 
 export default async function ProjectPage() {
   const { authUser, profile } = await requireUser();
@@ -157,6 +158,18 @@ export default async function ProjectPage() {
 
   const isAdmin = profile.role === "admin";
 
+  // See the identical pattern + comment in app/dues/page.tsx — a plain
+  // closure can't cross the Server->Client boundary as a prop, only an
+  // actual Server Action can, so this binds projectId via an inline one.
+  // (project.id is captured in a local const first — TS control-flow
+  // narrowing from the `if (!project)` check above doesn't cross into a
+  // nested function, even for a const binding.)
+  const projectId = project.id;
+  async function exportCsv() {
+    "use server";
+    return exportBidComparisonCsv(projectId);
+  }
+
   return (
     <div className="min-h-screen w-full">
       <AppHeader
@@ -190,6 +203,7 @@ export default async function ProjectPage() {
             initialItems={items}
             initialBids={bids}
             isAdmin={isAdmin}
+            exportCsv={exportCsv}
           />
         </div>
 

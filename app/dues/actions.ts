@@ -2,7 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, requireUser } from "@/lib/auth";
+import { fetchDuesChargesForPeriod } from "@/lib/duesData";
+import { toCsv } from "@/lib/csv";
 
 function refresh() {
   revalidatePath("/dues");
@@ -133,4 +135,18 @@ export async function waiveCharge(chargeId: string) {
     .eq("id", chargeId);
   if (error) throw new Error(error.message);
   refresh();
+}
+
+// --- Export ----------------------------------------------------------------
+
+/** Any org member can export — this is read-only, same as viewing the table. */
+export async function exportDuesCsv(period: string): Promise<string> {
+  const { profile } = await requireUser();
+  if (!profile.org_id) throw new Error("No organization");
+  const supabase = await createClient();
+  const { charges } = await fetchDuesChargesForPeriod(supabase, profile.org_id, period);
+  return toCsv(
+    ["Unit", "Owner", "Amount Due", "Status", "Paid Date"],
+    charges.map((c) => [c.unitLabel, c.ownerName, c.amountDue, c.status, c.paidDate ?? ""]),
+  );
 }

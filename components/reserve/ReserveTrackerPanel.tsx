@@ -13,6 +13,7 @@ import {
 } from "@/lib/ReserveTrackerService";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
+import { ExportCsvButton } from "@/components/ExportCsvButton";
 import { fmt } from "@/lib/money";
 import { healthBandColor } from "@/lib/healthBand";
 import { ChevronRight, Plus, X } from "@/components/bid-ledger/icons";
@@ -36,11 +37,13 @@ export function ReserveTrackerPanel({
   initialBalance,
   initialContribution,
   initialAssets,
+  exportCsv,
 }: {
   isAdmin: boolean;
   initialBalance: number;
   initialContribution: number;
   initialAssets: ReserveAssetRow[];
+  exportCsv: () => Promise<string>;
 }) {
   const [balance, setBalance] = useState(String(initialBalance));
   const [contribution, setContribution] = useState(String(initialContribution));
@@ -108,11 +111,14 @@ export function ReserveTrackerPanel({
 
   return (
     <div>
-      <div className="mb-6 border-b-2 border-ink pb-4">
-        <div className="mb-2 text-xs uppercase tracking-widest text-ink-soft" style={{ letterSpacing: "0.15em" }}>
-          Bid Ledger · Reserve Fund
+      <div className="mb-6 flex items-end justify-between border-b-2 border-ink pb-4">
+        <div>
+          <div className="mb-2 text-xs uppercase tracking-widest text-ink-soft" style={{ letterSpacing: "0.15em" }}>
+            Bid Ledger · Reserve Fund
+          </div>
+          <h1 className="font-serif text-2xl text-ink sm:text-3xl">10-Year Reserve Outlook</h1>
         </div>
-        <h1 className="font-serif text-2xl text-ink sm:text-3xl">10-Year Reserve Outlook</h1>
+        <ExportCsvButton action={exportCsv} filename="reserve-outlook.csv" />
       </div>
 
       <div className="mb-6 flex flex-wrap gap-6 rounded border border-rule bg-paper-card shadow-card p-3">

@@ -15,6 +15,7 @@ import { fmt, money } from "@/lib/money";
 import { useDebouncedCallback } from "@/lib/useDebouncedCallback";
 import { Check, ClipboardCopy, Plus, Stamp, X } from "@/components/bid-ledger/icons";
 import { Button } from "@/components/ui/Button";
+import { ExportCsvButton } from "@/components/ExportCsvButton";
 
 export interface LineItemRow {
   id: string;
@@ -36,12 +37,14 @@ export function BidLedgerClient({
   initialItems,
   initialBids,
   isAdmin,
+  exportCsv,
 }: {
   projectId: string;
   initialTitle: string;
   initialItems: LineItemRow[];
   initialBids: BidRow[];
   isAdmin: boolean;
+  exportCsv: () => Promise<string>;
 }) {
   const [title, setTitle] = useState(initialTitle);
   const [items, setItems] = useState(initialItems);
@@ -227,6 +230,7 @@ export function BidLedgerClient({
             <Plus size={14} /> Add line item
           </Button>
           <div className="flex-1" />
+          <ExportCsvButton action={exportCsv} filename="bid-comparison.csv" />
           <Button onClick={copySummary} variant="outline" className="!border-gold !text-gold-text">
             {copied ? <Check size={14} /> : <ClipboardCopy size={14} />}
             {copied ? "Copied" : "Copy summary"}
@@ -234,7 +238,8 @@ export function BidLedgerClient({
         </div>
       )}
       {!isAdmin && (
-        <div className="mb-3 flex justify-end">
+        <div className="mb-3 flex justify-end gap-2">
+          <ExportCsvButton action={exportCsv} filename="bid-comparison.csv" />
           <Button onClick={copySummary} variant="outline" className="!border-gold !text-gold-text">
             {copied ? <Check size={14} /> : <ClipboardCopy size={14} />}
             {copied ? "Copied" : "Copy summary"}

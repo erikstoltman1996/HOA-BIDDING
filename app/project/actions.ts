@@ -2,9 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdmin, requireUser } from "@/lib/auth";
 import { sendCheckinEmail, sendContractorInviteEmail } from "@/lib/email/resend";
 import { fmt, money } from "@/lib/money";
+import { toCsv } from "@/lib/csv";
 import type { Database } from "@/types/database";
 
 function siteUrl() {
@@ -358,4 +359,62 @@ export async function sendContractorReminder(contractorId: string) {
     updateUrl: `${siteUrl()}/contractor/${contractor.access_token}`,
     isReminder: true,
   });
+}
+
+// --- Export ----------------------------------------------------------------
+
+/** Any org member can export — this is read-only, same as viewing the ledger. */
+export async function exportBidComparisonCsv(projectId: string): Promise<string> {
+  const { profile } = await requireUser();
+  if (!profile.org_id) throw new Error("No organization");
+  const supabase = await createClient();
+
+  const { data: project } = await supabase
+    .from("projects")
+    .select("title")
+    .eq("id", projectId)
+    .eq("org_id", profile.org_id)
+    .single();
+  if (!project) throw new Error("Project not found");
+
+  const [{ data: lineItems }, { data: bidsRaw }] = await Promise.all([
+    supabase.from("line_items").select("*").eq("project_id", projectId).order("sort_order"),
+    supabase.from("bids").select("*").eq("project_id", projectId).order("created_at"),
+  ]);
+
+  const bidIds = (bidsRaw ?? []).map((b) => b.id);
+  const { data: amounts } = bidIds.length
+    ? await supabase.from("bid_line_item_amounts").select("*").in("bid_id", bidIds)
+    : { data: [] };
+
+  const bids = bidsRaw ?? [];
+  const items = lineItems ?? [];
+
+  const amountFor = (bidId: string, itemId: string) =>
+    money((amounts ?? []).find((a) => a.bid_id === bidId && a.line_item_id === itemId)?.amount ?? null);
+
+  const totals = bids.map((b) => {
+    let sum = 0;
+    let hasAny = false;
+    items.forEach((it) => {
+      const v = amountFor(b.id, it.id);
+      if (v !== null) {
+        sum += v;
+        hasAny = true;
+      }
+    });
+    return hasAny ? sum : null;
+  });
+
+  const headers = ["Line Item", ...bids.map((b) => b.vendor_name || "(unnamed vendor)")];
+  const rows: Array<Array<string | number | null>> = items.map((it) => [
+    it.label || "(item)",
+    ...bids.map((b) => amountFor(b.id, it.id)),
+  ]);
+  rows.push(["Total", ...totals]);
+  rows.push(["Warranty (yrs)", ...bids.map((b) => b.warranty_years)]);
+  rows.push(["Timeline (wks)", ...bids.map((b) => b.timeline_weeks)]);
+  rows.push(["Notes", ...bids.map((b) => b.notes)]);
+
+  return toCsv(headers, rows);
 }

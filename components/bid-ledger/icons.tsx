@@ -22,4 +22,5 @@ export {
   ChevronLeft,
   ChevronRight,
   Camera,
+  Download,
 } from "lucide-react";

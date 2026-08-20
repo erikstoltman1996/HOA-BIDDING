@@ -8,8 +8,10 @@ import { UnitManager } from "@/components/dues/UnitManager";
 import { DuesTable } from "@/components/dues/DuesTable";
 import { DuesSummary } from "@/components/dues/DuesSummary";
 import { GenerateChargesButton } from "@/components/dues/GenerateChargesButton";
+import { ExportCsvButton } from "@/components/ExportCsvButton";
 import { currentPeriod, formatPeriodLabel, shiftPeriod, summarizeDues } from "@/lib/dues";
 import { ChevronLeft, ChevronRight } from "@/components/bid-ledger/icons";
+import { exportDuesCsv } from "./actions";
 
 export default async function DuesPage({
   searchParams,
@@ -36,6 +38,15 @@ export default async function DuesPage({
     supabase.from("organizations").select("*").eq("id", profile.org_id).single(),
     fetchDuesChargesForPeriod(supabase, profile.org_id, period),
   ]);
+
+  // A plain closure can't cross the Server->Client boundary as a prop — only
+  // an actual Server Action can. This inline "use server" wrapper is how you
+  // bind an argument (here, the period from the URL) onto one for a Client
+  // Component that takes a zero-arg callback.
+  async function exportThisPeriod() {
+    "use server";
+    return exportDuesCsv(period);
+  }
 
   return (
     <div className="min-h-screen w-full">
@@ -69,6 +80,14 @@ export default async function DuesPage({
         </div>
 
         <DuesSummary summary={summarizeDues(charges.map((c) => ({ status: c.status, amount_due: c.amountDue })))} />
+
+        <div className="mb-6 flex justify-end">
+          <ExportCsvButton
+            action={exportThisPeriod}
+            filename={`dues-${period}.csv`}
+            label={`Export ${formatPeriodLabel(period)} CSV`}
+          />
+        </div>
 
         {isAdmin && (
           <>

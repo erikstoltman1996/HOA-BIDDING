@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { ReserveTrackerPanel } from "@/components/reserve/ReserveTrackerPanel";
 import { AppHeader } from "@/components/AppHeader";
 import { SectionNav } from "@/components/SectionNav";
+import { exportReserveOutlookCsv } from "./actions";
 
 export default async function ReservePage() {
   const { authUser, profile } = await requireUser();
@@ -40,6 +41,7 @@ export default async function ReservePage() {
           initialBalance={settings?.current_balance ?? 0}
           initialContribution={settings?.annual_contribution ?? 0}
           initialAssets={assets ?? []}
+          exportCsv={exportReserveOutlookCsv}
         />
       </div>
     </div>
