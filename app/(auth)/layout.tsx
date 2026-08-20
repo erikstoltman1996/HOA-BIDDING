@@ -13,6 +13,17 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         <div className="rounded border border-rule bg-paper-card shadow-card p-6">
           {children}
         </div>
+        <p className="mt-4 text-center text-xs text-ink-soft">
+          By continuing, you agree to the{" "}
+          <a href="/terms" className="underline hover:text-ink">
+            Terms of Service
+          </a>{" "}
+          and{" "}
+          <a href="/privacy" className="underline hover:text-ink">
+            Privacy Policy
+          </a>
+          .
+        </p>
       </div>
     </div>
   );
