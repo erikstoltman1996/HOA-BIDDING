@@ -1,15 +1,17 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { submitContractorUpdate } from "@/app/contractor/[token]/actions";
 import { Button } from "@/components/ui/Button";
-import { Check } from "@/components/bid-ledger/icons";
+import { Check, Camera, X } from "@/components/bid-ledger/icons";
 
 const STATUS_OPTIONS: Array<{ value: "on_track" | "ahead" | "delayed"; label: string }> = [
   { value: "on_track", label: "On track" },
   { value: "ahead", label: "Ahead of schedule" },
   { value: "delayed", label: "Delayed" },
 ];
+
+const MAX_PHOTOS = 6;
 
 export function ContractorUpdateForm({
   token,
@@ -22,15 +24,38 @@ export function ContractorUpdateForm({
 }) {
   const [percent, setPercent] = useState(50);
   const [status, setStatus] = useState<"on_track" | "ahead" | "delayed">("on_track");
+  const [photos, setPhotos] = useState<File[]>([]);
   const [isPending, startTransition] = useTransition();
   const [state, setState] = useState<"idle" | "done" | "error">("idle");
   const [error, setError] = useState("");
   const formRef = useRef<HTMLFormElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Object URLs for the thumbnail grid — derived from the selected files
+  // rather than stored in their own state (nothing here needs to trigger a
+  // second render). The effect below only revokes them on the way out, so
+  // we don't leak memory on a page a contractor might leave open on-site.
+  const previewUrls = useMemo(() => photos.map((f) => URL.createObjectURL(f)), [photos]);
+  useEffect(() => {
+    return () => previewUrls.forEach((u) => URL.revokeObjectURL(u));
+  }, [previewUrls]);
+
+  function handleFilesSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const picked = Array.from(e.target.files ?? []);
+    setPhotos((current) => [...current, ...picked].slice(0, MAX_PHOTOS));
+    // Reset so selecting the same file again later still fires onChange.
+    e.target.value = "";
+  }
+
+  function removePhoto(index: number) {
+    setPhotos((current) => current.filter((_, i) => i !== index));
+  }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError("");
     const formData = new FormData(e.currentTarget);
+    photos.forEach((file) => formData.append("photos", file));
     startTransition(async () => {
       try {
         await submitContractorUpdate(token, formData);
@@ -38,6 +63,7 @@ export function ContractorUpdateForm({
         formRef.current?.reset();
         setPercent(50);
         setStatus("on_track");
+        setPhotos([]);
       } catch (err) {
         setState("error");
         setError(err instanceof Error ? err.message : "Could not submit update");
@@ -130,18 +156,53 @@ export function ContractorUpdateForm({
         </div>
 
         <div>
-          <label htmlFor="photos" className="mb-1 block text-xs text-ink-soft">
-            Photos (optional, up to 6)
-          </label>
+          <div className="mb-1.5 flex items-center justify-between">
+            <span className="block text-xs text-ink-soft">Photos (optional, up to {MAX_PHOTOS})</span>
+            {photos.length > 0 && (
+              <span className="font-mono text-xs text-ink-soft">
+                {photos.length}/{MAX_PHOTOS}
+              </span>
+            )}
+          </div>
+
+          {previewUrls.length > 0 && (
+            <div className="mb-2 grid grid-cols-3 gap-2 sm:grid-cols-4">
+              {previewUrls.map((url, i) => (
+                <div key={url} className="relative aspect-square overflow-hidden rounded border border-rule">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={url} alt={`Photo ${i + 1}`} className="h-full w-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => removePhoto(i)}
+                    aria-label={`Remove photo ${i + 1}`}
+                    className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-ink/80 text-paper hover:bg-ink"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           <input
-            id="photos"
-            name="photos"
+            ref={fileInputRef}
             type="file"
             accept="image/*"
             multiple
             capture="environment"
-            className="w-full text-sm text-ink-soft"
+            onChange={handleFilesSelected}
+            className="hidden"
           />
+          {photos.length < MAX_PHOTOS && (
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="flex w-full items-center justify-center gap-2 rounded border border-dashed border-rule py-3 text-sm text-ink-soft hover:border-ink hover:text-ink"
+            >
+              <Camera size={16} />
+              {photos.length === 0 ? "Add photos" : "Add more photos"}
+            </button>
+          )}
         </div>
 
         {error && <p className="text-xs text-red-700">{error}</p>}

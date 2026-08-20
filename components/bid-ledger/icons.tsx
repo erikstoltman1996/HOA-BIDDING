@@ -21,4 +21,5 @@ export {
   MinusCircle,
   ChevronLeft,
   ChevronRight,
+  Camera,
 } from "lucide-react";
