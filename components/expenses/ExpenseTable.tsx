@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { setExpenseAmount } from "@/app/expenses/actions";
 import { useDebouncedCallback } from "@/lib/useDebouncedCallback";
 import { fmt, money } from "@/lib/money";
+import { formatPeriodLabel } from "@/lib/dues";
 
 export interface ExpenseTableRow {
   categoryId: string;
@@ -82,8 +83,22 @@ export function ExpenseTable({
     return <p className="text-xs text-ink-soft">No expense categories added yet.</p>;
   }
 
+  const enteredCount = rows.filter((r) => r.amount !== null).length;
+
   return (
     <div className="overflow-x-auto rounded border border-rule bg-paper-card shadow-card">
+      {/* The month arrows live up in the page header, well above this
+       *  table — easy to lose track of which month you're actually
+       *  editing once you've scrolled past them. Repeating it here, right
+       *  on the table doing the editing, removes that guesswork. */}
+      <div className="flex items-center justify-between gap-2 border-b border-rule bg-paper px-3 py-2">
+        <p className="text-xs font-medium text-ink">
+          Editing amounts for <span className="text-ink">{formatPeriodLabel(period)}</span>
+        </p>
+        <p className="text-xs text-ink-soft">
+          {enteredCount === 0 ? "Nothing entered for this month yet" : `${enteredCount} of ${rows.length} entered`}
+        </p>
+      </div>
       <table className="w-full text-sm" style={{ borderCollapse: "collapse", minWidth: 400 }}>
         <thead>
           <tr>

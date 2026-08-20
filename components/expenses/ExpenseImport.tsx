@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { bulkApplyExpenseImport, parseExpenseImportFile } from "@/app/expenses/actions";
 import type { ParsedExpenseBreakdown } from "@/lib/financialImportParser";
 import { Button } from "@/components/ui/Button";
@@ -64,6 +65,14 @@ export function ExpenseImport() {
   }
 
   const totalEntries = result?.categories.reduce((sum, c) => sum + c.entries.length, 0) ?? 0;
+  // The table below the fold always shows whatever month the page happens
+  // to be on right now — usually the current month, almost never the
+  // months a bookkeeping file actually covers. Surfacing direct links to
+  // those months is what turns "I applied it but everything shows $0"
+  // into "oh, I need to look at a different month."
+  const importedPeriods = result
+    ? Array.from(new Set(result.categories.flatMap((c) => c.entries.map((e) => e.period)))).sort()
+    : [];
 
   return (
     <div className="rounded border border-rule bg-paper-card shadow-card p-3">
@@ -140,6 +149,27 @@ export function ExpenseImport() {
               <Button type="button" variant="outline" onClick={apply} disabled={status === "applying" || status === "applied"}>
                 {status === "applied" ? "Applied" : status === "applying" ? "Applying…" : "Apply — import all categories & amounts"}
               </Button>
+
+              {status === "applied" && importedPeriods.length > 0 && (
+                <div className="mt-3 border-t border-rule pt-3">
+                  <p className="mb-1.5 text-xs text-ink-soft">
+                    Imported into {importedPeriods.length} month{importedPeriods.length === 1 ? "" : "s"} — the
+                    table below only shows whichever one month you&apos;re currently viewing, so jump straight to
+                    one of these to see the numbers:
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {importedPeriods.map((p) => (
+                      <Link
+                        key={p}
+                        href={`/expenses?period=${p}`}
+                        className="rounded border border-rule bg-paper-card px-2 py-1 text-xs text-ink hover:border-ink"
+                      >
+                        {formatPeriodLabel(p)}
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
