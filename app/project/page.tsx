@@ -166,36 +166,59 @@ export default async function ProjectPage() {
       />
       <div className="mx-auto max-w-5xl p-4 sm:p-8">
         <SectionNav current="/project" />
-        <BidLedgerClient
-          projectId={project.id}
-          initialTitle={project.title}
-          initialItems={items}
-          initialBids={bids}
-          isAdmin={isAdmin}
-        />
 
-        <CheckinPanel
-          projectId={project.id}
-          isAdmin={isAdmin}
-          currentUserId={profile.id}
-          boardMembers={boardMembers ?? []}
-          bids={checkinBids}
-          checkins={checkins}
-        />
+        {/* Jump links — the page below is three distinct sections stacked
+            (bid comparison, board check-in, contractor updates); this lets
+            people land straight on the one they came for instead of
+            scrolling past a long bid table every time. */}
+        <nav className="mb-6 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-soft">
+          <a href="#bid-ledger" className="underline hover:text-ink">
+            Bid comparison
+          </a>
+          <a href="#check-in" className="underline hover:text-ink">
+            Board check-in
+          </a>
+          <a href="#updates" className="underline hover:text-ink">
+            Contractor updates
+          </a>
+        </nav>
 
-        <ContractorPanel
-          projectId={project.id}
-          isAdmin={isAdmin}
-          contractors={contractors ?? []}
-          updates={weeklyUpdates}
-          // This is an async Server Component — it renders once per request
-          // on the server, not repeatedly like a client component under
-          // Strict Mode/concurrent rendering, so a one-time Date.now() here
-          // carries none of the purity/hydration risk the lint rule guards
-          // against on the client.
-          // eslint-disable-next-line react-hooks/purity
-          now={Date.now()}
-        />
+        <div id="bid-ledger" className="scroll-mt-6">
+          <BidLedgerClient
+            projectId={project.id}
+            initialTitle={project.title}
+            initialItems={items}
+            initialBids={bids}
+            isAdmin={isAdmin}
+          />
+        </div>
+
+        <div id="check-in" className="scroll-mt-6">
+          <CheckinPanel
+            projectId={project.id}
+            isAdmin={isAdmin}
+            currentUserId={profile.id}
+            boardMembers={boardMembers ?? []}
+            bids={checkinBids}
+            checkins={checkins}
+          />
+        </div>
+
+        <div id="updates" className="scroll-mt-6">
+          <ContractorPanel
+            projectId={project.id}
+            isAdmin={isAdmin}
+            contractors={contractors ?? []}
+            updates={weeklyUpdates}
+            // This is an async Server Component — it renders once per request
+            // on the server, not repeatedly like a client component under
+            // Strict Mode/concurrent rendering, so a one-time Date.now() here
+            // carries none of the purity/hydration risk the lint rule guards
+            // against on the client.
+            // eslint-disable-next-line react-hooks/purity
+            now={Date.now()}
+          />
+        </div>
       </div>
     </div>
   );

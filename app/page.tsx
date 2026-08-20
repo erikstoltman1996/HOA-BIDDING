@@ -8,7 +8,22 @@ import { fmt } from "@/lib/money";
 import { healthBandColor } from "@/lib/healthBand";
 import { AppHeader } from "@/components/AppHeader";
 import { DuesTable } from "@/components/dues/DuesTable";
-import { ArrowRight } from "@/components/bid-ledger/icons";
+import { ArrowRight, ClipboardList } from "@/components/bid-ledger/icons";
+import type { Database } from "@/types/database";
+
+type TimelineStatus = Database["public"]["Tables"]["weekly_updates"]["Row"]["timeline_status"];
+
+const STATUS_LABEL: Record<TimelineStatus, string> = {
+  on_track: "On track",
+  ahead: "Ahead of schedule",
+  delayed: "Delayed",
+};
+
+const STATUS_COLOR: Record<TimelineStatus, string> = {
+  on_track: "#3F6B4E",
+  ahead: "#3F6B4E",
+  delayed: "#B8863B",
+};
 
 export default async function HomePage() {
   const { authUser, profile } = await requireUser();
@@ -43,8 +58,18 @@ export default async function HomePage() {
 
   let bidCount = 0;
   let latestCheckin: { responded: number; total: number } | null = null;
+  let latestUpdate: {
+    contractorName: string;
+    percentComplete: number;
+    timelineStatus: TimelineStatus;
+    createdAt: string;
+    nextMilestoneDate: string | null;
+    photoUrl: string | null;
+  } | null = null;
+  let hasContractors = false;
+
   if (project) {
-    const [{ count }, { data: checkinsRaw }] = await Promise.all([
+    const [{ count }, { data: checkinsRaw }, { data: contractors }] = await Promise.all([
       supabase.from("bids").select("id", { count: "exact", head: true }).eq("project_id", project.id),
       supabase
         .from("board_checkins")
@@ -52,8 +77,10 @@ export default async function HomePage() {
         .eq("project_id", project.id)
         .order("created_at", { ascending: false })
         .limit(1),
+      supabase.from("contractors").select("id, name").eq("project_id", project.id),
     ]);
     bidCount = count ?? 0;
+    hasContractors = (contractors ?? []).length > 0;
 
     if (checkinsRaw && checkinsRaw.length > 0) {
       const { data: responses } = await supabase
@@ -64,6 +91,32 @@ export default async function HomePage() {
         total: responses?.length ?? 0,
         responded: (responses ?? []).filter((r) => r.responded_at).length,
       };
+    }
+
+    const contractorIds = (contractors ?? []).map((c) => c.id);
+    if (contractorIds.length > 0) {
+      const { data: updatesRaw } = await supabase
+        .from("weekly_updates")
+        .select("*")
+        .in("contractor_id", contractorIds)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      const latest = updatesRaw?.[0];
+      if (latest) {
+        const { data: photos } = await supabase
+          .from("photos")
+          .select("url")
+          .eq("update_id", latest.id)
+          .limit(1);
+        latestUpdate = {
+          contractorName: (contractors ?? []).find((c) => c.id === latest.contractor_id)?.name ?? "Contractor",
+          percentComplete: latest.percent_complete,
+          timelineStatus: latest.timeline_status,
+          createdAt: latest.created_at,
+          nextMilestoneDate: latest.next_milestone_date,
+          photoUrl: photos?.[0]?.url ?? null,
+        };
+      }
     }
   }
   const activeProjectCount = project && project.status !== "complete" ? 1 : 0;
@@ -178,27 +231,87 @@ export default async function HomePage() {
           </div>
         </Section>
 
-        {/* Projects */}
-        <Section title="Projects">
+        {/* Current Project & Updates */}
+        <Section
+          title="Current Project & Updates"
+          action={
+            project ? (
+              <Link href="/project" className="text-sm text-ink underline hover:text-gold">
+                Open bid ledger →
+              </Link>
+            ) : undefined
+          }
+        >
           {project ? (
-            <Link
-              href="/project"
-              className="group flex flex-col rounded-lg border border-rule bg-paper-card p-5 shadow-card transition-all duration-150 hover:-translate-y-0.5 hover:border-gold hover:shadow-card-hover"
-            >
-              <div className="mb-1 flex items-center justify-between">
-                <span className="font-serif text-lg text-ink">{project.title || "Untitled project"}</span>
-                <ArrowRight
-                  size={16}
-                  className="text-ink-soft transition-transform group-hover:translate-x-0.5 group-hover:text-gold"
-                />
-              </div>
-              <p className="text-xs text-ink-soft">
-                Status: {project.status.replace("_", " ")} · {bidCount} bid{bidCount === 1 ? "" : "s"}
-                {latestCheckin
-                  ? ` · ${latestCheckin.responded} of ${latestCheckin.total} replied to latest check-in`
-                  : ""}
-              </p>
-            </Link>
+            <div className="space-y-4">
+              <Link
+                href="/project#bid-ledger"
+                className="group flex flex-col rounded-lg border border-rule bg-paper-card p-5 shadow-card transition-all duration-150 hover:-translate-y-0.5 hover:border-gold hover:shadow-card-hover"
+              >
+                <div className="mb-1 flex items-center justify-between">
+                  <span className="font-serif text-lg text-ink">{project.title || "Untitled project"}</span>
+                  <ArrowRight
+                    size={16}
+                    className="text-ink-soft transition-transform group-hover:translate-x-0.5 group-hover:text-gold"
+                  />
+                </div>
+                <p className="text-xs text-ink-soft">
+                  Status: {project.status.replace("_", " ")} · {bidCount} bid{bidCount === 1 ? "" : "s"}
+                  {latestCheckin
+                    ? ` · ${latestCheckin.responded} of ${latestCheckin.total} replied to latest check-in`
+                    : ""}
+                </p>
+              </Link>
+
+              <Link
+                href="/project#updates"
+                className="group flex flex-col rounded-lg border border-rule bg-paper-card p-5 shadow-card transition-all duration-150 hover:-translate-y-0.5 hover:border-gold hover:shadow-card-hover"
+              >
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="flex items-center gap-2 font-serif text-lg text-ink">
+                    <ClipboardList size={16} className="text-ink-soft" />
+                    Latest Update
+                  </span>
+                  <ArrowRight
+                    size={16}
+                    className="text-ink-soft transition-transform group-hover:translate-x-0.5 group-hover:text-gold"
+                  />
+                </div>
+                {latestUpdate ? (
+                  <div className="flex flex-wrap items-start gap-4">
+                    {latestUpdate.photoUrl && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={latestUpdate.photoUrl}
+                        alt="Latest progress photo"
+                        className="h-16 w-16 shrink-0 rounded object-cover"
+                      />
+                    )}
+                    <div>
+                      <p className="text-sm text-ink">
+                        <span className="font-medium">{latestUpdate.contractorName}</span>{" "}
+                        <span className="font-mono">{latestUpdate.percentComplete}% complete</span>
+                      </p>
+                      <p className="text-xs text-ink-soft">
+                        <span style={{ color: STATUS_COLOR[latestUpdate.timelineStatus] }} className="font-medium">
+                          {STATUS_LABEL[latestUpdate.timelineStatus]}
+                        </span>{" "}
+                        · {new Date(latestUpdate.createdAt).toLocaleDateString()}
+                        {latestUpdate.nextMilestoneDate
+                          ? ` · Next milestone ${new Date(latestUpdate.nextMilestoneDate).toLocaleDateString()}`
+                          : ""}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-ink-soft">
+                    {hasContractors
+                      ? "Waiting on the first weekly update."
+                      : "No contractor added yet — add one once a bid is awarded."}
+                  </p>
+                )}
+              </Link>
+            </div>
           ) : (
             <p className="text-sm text-ink-soft">No project set up yet.</p>
           )}
