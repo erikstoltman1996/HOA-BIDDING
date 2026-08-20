@@ -14,6 +14,8 @@ import {
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { ExportCsvButton } from "@/components/ExportCsvButton";
+import { projectOutlookMonthly, type MonthProjection } from "@/lib/reserveMonthlyProjection";
+import { FinancialImport } from "@/components/reserve/FinancialImport";
 import { fmt } from "@/lib/money";
 import { healthBandColor } from "@/lib/healthBand";
 import { ChevronRight, Plus, X } from "@/components/bid-ledger/icons";
@@ -54,6 +56,7 @@ export function ReserveTrackerPanel({
   const [expAssetId, setExpAssetId] = useState("");
   const [interestRate, setInterestRate] = useState("");
   const [inflationRate, setInflationRate] = useState("");
+  const [granularity, setGranularity] = useState<"yearly" | "monthly">("yearly");
 
   function saveSettings(nextBalance: string, nextContribution: string) {
     const b = Number(nextBalance);
@@ -61,6 +64,14 @@ export function ReserveTrackerPanel({
     if (Number.isFinite(b) && Number.isFinite(c)) {
       startTransition(() => updateReserveSettings(b, c));
     }
+  }
+
+  function handleImportApply(detectedBalance: number | null, detectedContribution: number | null) {
+    const nextBalance = detectedBalance !== null ? String(detectedBalance) : balance;
+    const nextContribution = detectedContribution !== null ? String(detectedContribution) : contribution;
+    setBalance(nextBalance);
+    setContribution(nextContribution);
+    saveSettings(nextBalance, nextContribution);
   }
 
   // The stored schema tracks each asset's age; the service works in terms
@@ -108,6 +119,40 @@ export function ReserveTrackerPanel({
       return null;
     }
   }, [balance, contribution, assets, expDescription, expAmount, expAssetId, interestRate, inflationRate]);
+
+  // Only computed when the Monthly view is actually selected — 120 rows is
+  // cheap either way, but no reason to redo the work on every keystroke in
+  // the (default) yearly view.
+  const monthlyOutlook = useMemo(() => {
+    if (granularity !== "monthly") return null;
+    const b = Number(balance);
+    const c = Number(contribution);
+    const amount = Number(expAmount);
+    if (!Number.isFinite(b) || !Number.isFinite(c) || b < 0 || c < 0) return null;
+    try {
+      return projectOutlookMonthly(
+        b,
+        assets,
+        Number.isFinite(amount) && amount > 0
+          ? {
+              description: expDescription || "Unplanned expenditure",
+              amount,
+              date: todayIso(),
+              assetId: expAssetId || undefined,
+            }
+          : undefined,
+        {
+          annualContribution: c,
+          interestRatePercent: Number(interestRate) || 0,
+          inflationRatePercent: Number(inflationRate) || 0,
+          projectionYears: 10,
+          alertThresholdPercent: ALERT_THRESHOLD,
+        },
+      );
+    } catch {
+      return null;
+    }
+  }, [granularity, balance, contribution, assets, expDescription, expAmount, expAssetId, interestRate, inflationRate]);
 
   return (
     <div>
@@ -171,6 +216,18 @@ export function ReserveTrackerPanel({
           </summary>
           <div className="mt-2">
             <AssetManager assets={initialAssets} isPending={isPending} startTransition={startTransition} />
+          </div>
+        </details>
+      )}
+
+      {isAdmin && (
+        <details className="group mb-6">
+          <summary className="flex cursor-pointer select-none items-center gap-1 text-sm font-medium text-ink-soft hover:text-ink">
+            <ChevronRight size={14} className="transition-transform group-open:rotate-90" />
+            Import from a bookkeeping export
+          </summary>
+          <div className="mt-2">
+            <FinancialImport onApply={handleImportApply} />
           </div>
         </details>
       )}
@@ -271,7 +328,38 @@ export function ReserveTrackerPanel({
         </div>
       )}
 
-      {result && <OutlookTable outlook={result.tenYearOutlook} />}
+      {result && (
+        <>
+          <div className="mb-3 flex items-center gap-2">
+            <span className="text-xs font-medium text-ink-soft">View:</span>
+            <div className="inline-flex overflow-hidden rounded border border-rule">
+              <button
+                type="button"
+                onClick={() => setGranularity("yearly")}
+                className={`px-3 py-1 text-xs font-medium transition-colors ${
+                  granularity === "yearly" ? "bg-ink text-paper-card" : "text-ink-soft hover:text-ink"
+                }`}
+              >
+                Yearly
+              </button>
+              <button
+                type="button"
+                onClick={() => setGranularity("monthly")}
+                className={`border-l border-rule px-3 py-1 text-xs font-medium transition-colors ${
+                  granularity === "monthly" ? "bg-ink text-paper-card" : "text-ink-soft hover:text-ink"
+                }`}
+              >
+                Monthly
+              </button>
+            </div>
+          </div>
+          {granularity === "yearly" ? (
+            <OutlookTable outlook={result.tenYearOutlook} />
+          ) : (
+            monthlyOutlook && <MonthlyOutlookTable outlook={monthlyOutlook} />
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -376,6 +464,56 @@ function AssetManager({
         </Button>
       </form>
       {error && <p className="mt-2 text-xs text-danger">{error}</p>}
+    </div>
+  );
+}
+
+function MonthlyOutlookTable({ outlook }: { outlook: MonthProjection[] }) {
+  return (
+    <div className="max-h-[32rem] overflow-y-auto overflow-x-auto rounded border border-rule bg-paper-card shadow-card">
+      <table className="w-full text-sm" style={{ borderCollapse: "collapse", minWidth: 760 }}>
+        <thead className="sticky top-0 bg-paper-card">
+          <tr>
+            {["Month", "Start", "+Contribution", "+Interest", "-Replacements", "End", "Fully funded", "% Funded"].map(
+              (h) => (
+                <th key={h} className="border-b-2 border-ink bg-paper-card p-2 text-right text-xs font-medium text-ink-soft">
+                  {h}
+                </th>
+              ),
+            )}
+          </tr>
+        </thead>
+        <tbody>
+          {outlook.map((m) => (
+            <tr key={m.month}>
+              <td className="border-t border-rule p-2 text-right font-mono text-ink">{m.month}</td>
+              <td className="border-t border-rule p-2 text-right font-mono text-ink-soft">{fmt(m.startingBalance)}</td>
+              <td className="border-t border-rule p-2 text-right font-mono text-check-green">
+                {m.contribution > 0 ? `+${fmt(m.contribution)}` : "—"}
+              </td>
+              <td className="border-t border-rule p-2 text-right font-mono text-check-green">
+                {m.interestEarned > 0 ? `+${fmt(m.interestEarned)}` : "—"}
+              </td>
+              <td className="border-t border-rule p-2 text-right font-mono text-ink-soft">
+                {m.plannedExpenditures > 0 ? `-${fmt(m.plannedExpenditures)}` : "—"}
+                {m.assetsReplaced.length > 0 && (
+                  <span className="ml-1 text-xs">({m.assetsReplaced.join(", ")})</span>
+                )}
+              </td>
+              <td className="border-t border-rule p-2 text-right font-mono font-semibold text-ink">
+                {fmt(m.endingBalance)}
+              </td>
+              <td className="border-t border-rule p-2 text-right font-mono text-ink-soft">{fmt(m.fullyFundedBalance)}</td>
+              <td
+                className="border-t border-rule p-2 text-right font-mono font-semibold"
+                style={{ color: healthBandColor(m.percentFunded) }}
+              >
+                {m.percentFunded.toFixed(0)}%
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

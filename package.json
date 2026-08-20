@@ -14,17 +14,23 @@
     "@react-email/components": "^1.0.12",
     "@supabase/ssr": "^0.12.4",
     "@supabase/supabase-js": "^2.112.3",
+    "exceljs": "^4.4.0",
     "lucide-react": "^1.33.0",
     "next": "16.3.1",
+    "papaparse": "^5.6.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-email": "^6.9.2",
     "resend": "^6.20.0",
     "zod": "^4.4.3"
   },
+  "overrides": {
+    "uuid": "^11.1.1"
+  },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/papaparse": "^5.5.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

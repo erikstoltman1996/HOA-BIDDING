@@ -110,7 +110,7 @@ no-login `/contractor/[token]` and `/vote/[token]` demo links.
 
 ## Tests
 
-`npm test` runs the unit test suite (Vitest, 50 cases across two files):
+`npm test` runs the unit test suite (Vitest, 84 cases across six files):
 
 - `lib/ReserveTrackerService.ts` (36 cases) — the reserve-fund projection calculator behind
   `/reserve`. Uses the standard reserve-study "component method": each asset's Fully Funded
@@ -120,12 +120,26 @@ no-login `/contractor/[token]` and `/vote/[token]` demo links.
   every asset, triggering a scheduled replacement (optionally inflation-adjusted) whenever one
   hits the end of its useful life, and compounding annual contributions plus optional interest
   — flagging any year that drops below a threshold (70% by default).
-- `lib/dues.ts` (14 cases) — period-key math (including year-boundary rollover) and
+- `lib/reserveMonthlyProjection.ts` (6 cases) — the same outlook at monthly resolution: the
+  equivalent monthly compounding rate, an asset replacing in the exact month its remaining
+  life hits zero (not smeared across a year), and that an unplanned expenditure is applied the
+  same way the yearly service applies it.
+- `lib/dues.ts` (17 cases) — period-key math (including year-boundary rollover) and
   `calculateCollectionRate`, which is `paid / (paid + unpaid)` with **waived charges excluded
   from both the numerator and denominator** — a waiver never makes the collection rate look
   better than it is.
+- `lib/financialImportParser.ts` (10 cases) — including two regressions found by running the
+  parser against a real HOA's export during development: an empty "Prior Year Ending Bank
+  Balance" row matching before the real "End Bank Balance" row (fixed by preferring whichever
+  label match actually has populated data, not the first match), and a reserve-contribution
+  row that appeared *before* the row chosen as the month header (fixed by not restricting the
+  label search to rows after the header).
+- `lib/healthBand.ts` (9 cases) and `lib/csv.ts` (6 cases).
 
-Both use the same green/gold/red health-band thresholds (70% / 30%) via `lib/healthBand.ts`.
+The reserve and dues health indicators share the same green/gold/red band system via
+`lib/healthBand.ts`, parameterized per metric — reserve-percent-funded and dues-collection-rate
+use different thresholds (70%/30% vs. 95%/85%) since "healthy" means something different for
+each.
 
 ## How the pieces fit together
 
@@ -195,6 +209,28 @@ Both use the same green/gold/red health-band thresholds (70% / 30%) via `lib/hea
   life*, so the component converts between the two rather than the schema mirroring the
   service's field names. Nothing about the what-if scenario is persisted; only the balance,
   contribution, and asset list are.
+  - **Yearly / Monthly toggle** — the 10-year outlook can also be viewed as 120 months instead
+    of 10 years (`lib/reserveMonthlyProjection.ts`, kept deliberately separate from
+    `ReserveTrackerService.ts` rather than modified in place, reusing its public statics).
+    Monthly contribution is annual/12; the monthly interest rate is the true equivalent
+    compounding rate `(1+annualRate)^(1/12)-1`, not a naive /12; each asset only replaces the
+    month its remaining life actually reaches zero, not smeared across the year. Yearly stays
+    the default view.
+  - **Import from a bookkeeping export** — an admin can upload a monthly income/expense CSV or
+    XLSX (`components/reserve/FinancialImport.tsx`) to pre-fill the balance and contribution
+    fields above instead of typing them in. `lib/financialImportParser.ts` detects a
+    month-name header row and then a balance row / reserve-contribution row *by label*
+    (keyword matching, not fixed cell positions — every HOA's export looks different), taking
+    the last populated month as "current balance" and annualizing the contribution if fewer
+    than 12 months are present. If either can't be found, or the file's layout isn't
+    recognizable at all, it says so and leaves that field for manual entry rather than
+    guessing. Nothing is written to `reserve_settings` until the admin reviews the preview and
+    clicks Apply, and the uploaded file itself is never stored — parsed in memory, two numbers
+    extracted, discarded. Uses `exceljs` and `papaparse` rather than the more commonly-reached-for
+    `xlsx` (SheetJS) package, which has an unpatched high-severity prototype-pollution/ReDoS
+    advisory on npm — not something to feed untrusted uploads through. `exceljs`'s own `uuid`
+    dependency is pinned to a patched major via `package.json`'s `overrides` field for the same
+    reason.
 - **Dues tracking** (`/dues`) — V1 is deliberately manual: no Stripe, no online payment
   collection. An admin maintains a `units` roster (label, owner, monthly amount) and clicks
   "Generate this period's charges" to create one `dues_charges` row per unit at that unit's
