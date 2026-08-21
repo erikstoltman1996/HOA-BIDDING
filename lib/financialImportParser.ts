@@ -137,9 +137,40 @@ function cellDate(cell: Cell): Date | null {
   return null;
 }
 
+interface MonthLabel {
+  /** 0-indexed (0 = January). */
+  monthIndex: number;
+  /** Present when the header cell itself carries a year, e.g. "Jul 2025"
+   *  (a real QuickBooks P&L header) as opposed to a bare "July" (a
+   *  hand-built spreadsheet, where the year has to come from elsewhere —
+   *  see parseExpenseBreakdown's startYear parameter). */
+  year: number | null;
+}
+
+/** Recognizes both a bare month name ("July", "Jul") and a month-plus-year
+ *  header ("July 2026", "Jul 2026") — the latter is how QuickBooks' own
+ *  Profit & Loss export labels its columns, and carries its own year, so
+ *  callers that need real calendar periods should prefer `.year` over
+ *  inferring one when it's present. */
+function parseMonthLabel(cell: Cell): MonthLabel | null {
+  const s = cellText(cell).toLowerCase().trim();
+  if (!s) return null;
+
+  const bare = MONTH_NAMES.indexOf(s) !== -1 ? MONTH_NAMES.indexOf(s) : MONTH_ABBR.indexOf(s);
+  if (bare !== -1) return { monthIndex: bare, year: null };
+
+  const match = s.match(/^([a-z]+)\s+(\d{4})$/);
+  if (match) {
+    const [, word, yearStr] = match;
+    const withYear = MONTH_NAMES.indexOf(word) !== -1 ? MONTH_NAMES.indexOf(word) : MONTH_ABBR.indexOf(word);
+    if (withYear !== -1) return { monthIndex: withYear, year: Number(yearStr) };
+  }
+
+  return null;
+}
+
 function isMonthLabel(cell: Cell): boolean {
-  const s = cellText(cell).toLowerCase();
-  return MONTH_NAMES.includes(s) || MONTH_ABBR.includes(s);
+  return parseMonthLabel(cell) !== null;
 }
 
 interface MonthHeader {
@@ -417,13 +448,6 @@ const TOTAL_INCOME_RE = /total\s*income/i;
  *  category label in practice does. */
 const EXPENSE_SECTION_HEADER_RE = /expense/i;
 
-function monthIndex(name: string): number {
-  const s = name.trim().toLowerCase();
-  const full = MONTH_NAMES.indexOf(s);
-  if (full !== -1) return full;
-  return MONTH_ABBR.indexOf(s);
-}
-
 /**
  * Finds every expense line-item row (between an "Expenses" section and its
  * "Total Expense" row) and reads out its value for each month column,
@@ -458,34 +482,49 @@ export function parseExpenseBreakdown(grid: Cell[][], startYear: number): Parsed
   const firstMonthCol = Math.min(...header.monthCols);
   const orderedMonthCols = [...header.monthCols].sort((a, b) => a - b);
 
-  const monthNames = orderedMonthCols.map((c) => cellText(grid[header.rowIndex]?.[c]));
-  const monthIndices = monthNames.map(monthIndex);
-  if (monthIndices.some((i) => i === -1)) {
+  const monthLabels = orderedMonthCols.map((c) => parseMonthLabel(grid[header.rowIndex]?.[c]));
+  if (monthLabels.some((m) => m === null)) {
     return {
       categories: [],
       warnings: ["Some month columns didn't resolve to a recognizable month name — add categories manually."],
     };
   }
-  for (let i = 1; i < monthIndices.length; i++) {
-    const expected = (monthIndices[i - 1] + 1) % 12;
-    if (monthIndices[i] !== expected) {
-      return {
-        categories: [],
-        warnings: [
-          "Month columns in this file aren't in sequential order — this importer assumes a normal Jan-Dec (or fiscal-year) sequence. Add categories manually.",
-        ],
-      };
+  const labels = monthLabels as MonthLabel[];
+
+  let periods: string[];
+  if (labels.every((m) => m.year !== null)) {
+    // Every column already carries its own year (e.g. "Jul 2025" — a real
+    // QuickBooks Profit & Loss export labels columns this way) — just use
+    // it directly. No need to assume a sequential Jan-Dec order or infer a
+    // fiscal-year crossing from startYear; the file already says exactly
+    // which calendar month each column is.
+    periods = labels.map((m) => `${m.year}-${String(m.monthIndex + 1).padStart(2, "0")}-01`);
+  } else {
+    // Bare month names ("July") carry no year of their own — anchor from
+    // startYear and assume the usual chronological Jan-Dec (or fiscal-year)
+    // sequence, same as ever.
+    const monthIndices = labels.map((m) => m.monthIndex);
+    for (let i = 1; i < monthIndices.length; i++) {
+      const expected = (monthIndices[i - 1] + 1) % 12;
+      if (monthIndices[i] !== expected) {
+        return {
+          categories: [],
+          warnings: [
+            "Month columns in this file aren't in sequential order — this importer assumes a normal Jan-Dec (or fiscal-year) sequence. Add categories manually.",
+          ],
+        };
+      }
     }
+    periods = monthIndices.map((mi, i) => {
+      // Walk forward from the first column's (year, month) rather than
+      // assuming every column is in the same calendar year — a fiscal year
+      // starting mid-year crosses into the next calendar year partway through.
+      const firstMonth = monthIndices[0];
+      const yearsElapsed = Math.floor((firstMonth + i) / 12);
+      const y = startYear + yearsElapsed;
+      return `${y}-${String(mi + 1).padStart(2, "0")}-01`;
+    });
   }
-  const periods = monthIndices.map((mi, i) => {
-    // Walk forward from the first column's (year, month) rather than
-    // assuming every column is in the same calendar year — a fiscal year
-    // starting mid-year crosses into the next calendar year partway through.
-    const firstMonth = monthIndices[0];
-    const yearsElapsed = Math.floor((firstMonth + i) / 12);
-    const y = startYear + yearsElapsed;
-    return `${y}-${String(mi + 1).padStart(2, "0")}-01`;
-  });
 
   let totalExpenseRow = -1;
   grid.forEach((row, r) => {

@@ -244,6 +244,63 @@ describe("parseExpenseBreakdown", () => {
   });
 });
 
+// Shaped like QuickBooks' own Profit & Loss export: month headers carry
+// their own year ("Jul 2025", not bare "July"), and the fiscal year
+// crosses a calendar-year boundary partway through — a third real-world
+// shape, distinct from both the bare-month-name pivot and the flat
+// transaction list.
+function profitAndLossGrid(): Cell[][] {
+  return [
+    [null, "West Elmhurst Condo Association"],
+    [null, "Profit and Loss"],
+    [null, null, "Jul 2025", "Aug 2025", "Sep 2025", "Oct 2025", "Nov 2025", "Dec 2025", "Jan 2026", "TOTAL"],
+    [null, "Income"],
+    [1, "Captal Reserves Contribution", 500, null, null, null, 500, null, null, 1000],
+    [null, "Total Income", 500, null, null, null, 500, null, null, 1000],
+    [null, "Expenses"],
+    [1, "Insurance", null, null, 200, null, null, null, 200, 400],
+    [2, "Electric", 25, 25, 25, 25, 25, 25, 25, 175],
+    [null, "Total Expenses", 25, 25, 225, 25, 25, 25, 225, 575],
+    [null, "End Bank Balance", 14928.89, 15312.89, 15040.78, 15046.19, 16046.19, 11730.05, 10099.02],
+  ];
+}
+
+describe("parseExpenseBreakdown on a QuickBooks-style Profit & Loss export", () => {
+  it("maps each column to its own embedded year, not the given startYear", () => {
+    // startYear is 1999 here specifically to prove it's ignored — every
+    // period below should land in 2025/2026, taken from the header cells.
+    const result = parseExpenseBreakdown(profitAndLossGrid(), 1999);
+    const electric = result.categories.find((c) => c.label === "2 Electric")!;
+    expect(electric.entries.map((e) => e.period)).toEqual([
+      "2025-07-01",
+      "2025-08-01",
+      "2025-09-01",
+      "2025-10-01",
+      "2025-11-01",
+      "2025-12-01",
+      "2026-01-01",
+    ]);
+  });
+
+  it("crosses the calendar-year boundary correctly using the header's own years", () => {
+    const result = parseExpenseBreakdown(profitAndLossGrid(), 1999);
+    const insurance = result.categories.find((c) => c.label === "1 Insurance")!;
+    // Only September (2025) and January (2026) actually have values.
+    expect(insurance.entries).toEqual([
+      { period: "2025-09-01", amount: 200 },
+      { period: "2026-01-01", amount: 200 }, // TOTAL column excluded — not a month
+    ]);
+  });
+});
+
+describe("parseFinancialImport on a QuickBooks-style Profit & Loss export", () => {
+  it("finds the header row and detects balance/contribution despite month-plus-year headers", () => {
+    const result = parseFinancialImport(profitAndLossGrid());
+    expect(result.detectedBalance).toEqual({ value: 10099.02, asOfLabel: "Jan 2026" });
+    expect(result.detectedContribution).toEqual({ value: 6000, monthsFound: 2, annualized: true });
+  });
+});
+
 // Shaped exactly like QuickBooks' native "Transaction List by Date"
 // export: one row per real transaction, no month columns at all — the
 // fundamentally different real-world shape from the pivot fixture above.
