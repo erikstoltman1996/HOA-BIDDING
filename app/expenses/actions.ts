@@ -44,6 +44,22 @@ export async function removeExpenseCategory(categoryId: string) {
   refresh();
 }
 
+/**
+ * The nuclear option: deletes every expense category the org has — and,
+ * via the expense_entries FK's on-delete-cascade, every month of amounts
+ * ever entered or imported under them. Unlike undoExpenseImport(), this
+ * has no memory of what it's undoing and can't be reversed once called —
+ * the confirming UI (ExpenseCategoryManager) is what stands between a
+ * stray click and actually losing everything, not this action.
+ */
+export async function clearAllExpenseData() {
+  const admin = await requireAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.from("expense_categories").delete().eq("org_id", admin.org_id!);
+  if (error) throw new Error(error.message);
+  refresh();
+}
+
 // --- Entries ------------------------------------------------------------
 
 export async function setExpenseAmount(categoryId: string, period: string, amount: number) {
