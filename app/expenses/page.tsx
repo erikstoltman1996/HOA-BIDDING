@@ -115,7 +115,14 @@ export default async function ExpensesPage({
           </>
         )}
 
+        {/* key={period} forces a full remount on every month change. Without
+         *  it, Next.js reuses the same client component instance across a
+         *  soft navigation (e.g. the "jump to imported month" links above),
+         *  and ExpenseTable's local `values` state — seeded once from
+         *  `rows` on mount — never re-syncs to the new month's data, so the
+         *  header/summary look right but every box shows stale/empty. */}
         <ExpenseTable
+          key={period}
           period={period}
           rows={entries.map((e) => ({ categoryId: e.categoryId, categoryLabel: e.categoryLabel, amount: e.amount }))}
           isAdmin={isAdmin}
