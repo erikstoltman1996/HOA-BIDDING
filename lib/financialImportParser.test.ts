@@ -299,6 +299,18 @@ describe("parseFinancialImport on a QuickBooks-style Profit & Loss export", () =
     expect(result.detectedBalance).toEqual({ value: 10099.02, asOfLabel: "Jan 2026" });
     expect(result.detectedContribution).toEqual({ value: 6000, monthsFound: 2, annualized: true });
   });
+
+  it("prefers a combined checking+savings+CDs row over a plain end-balance row", () => {
+    // Reserve money parked in a savings account or CD leaves the checking
+    // balance ("End Bank Balance") but is still reserve money — a rollup
+    // row naming all three account types is the more complete figure, and
+    // should win even though the plain balance row appears first and has
+    // just as many populated months.
+    const grid = profitAndLossGrid();
+    grid.push([null, "Total for Checking, Savings, and CDs", 15000, 15100, 15200, 15300, 16000, 12000, 10500]);
+    const result = parseFinancialImport(grid);
+    expect(result.detectedBalance).toEqual({ value: 10500, asOfLabel: "Jan 2026" });
+  });
 });
 
 // Shaped exactly like QuickBooks' native "Transaction List by Date"

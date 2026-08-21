@@ -83,6 +83,13 @@ const MONTH_NAMES = [
 const MONTH_ABBR = MONTH_NAMES.map((m) => m.slice(0, 3));
 
 const BALANCE_LABEL_RE = /end(ing)?\s*(bank\s*)?balance|cash\s*balance/i;
+// A row combining checking with reserve savings/CDs (a QuickBooks-style
+// cash-position summary's own rollup row, e.g. "Total for Checking,
+// Savings, and CDs") is a strictly better reserve balance than a plain
+// "End Bank Balance" — money moved into a reserve savings account or CD
+// is still reserve money, it's just no longer sitting in the checking
+// account BALANCE_LABEL_RE describes. Preferred over it below.
+const COMBINED_BALANCE_LABEL_RE = /total\s+(for\s+)?checking,?\s*savings,?\s*(and\s*)?cds?/i;
 const RESERVE_WORD_RE = /reserve/i;
 const CONTRIBUTION_WORD_RE = /(contribution|fund)/i;
 
@@ -375,8 +382,13 @@ export function parseFinancialImport(grid: Cell[][]): ParsedFinancialImport {
     const label = rowLabel(row ?? [], firstMonthCol);
     if (!label) return;
 
-    if (BALANCE_LABEL_RE.test(label)) {
-      const score = populatedMonthCount(row ?? []);
+    const isCombinedBalance = COMBINED_BALANCE_LABEL_RE.test(label);
+    if (isCombinedBalance || BALANCE_LABEL_RE.test(label)) {
+      // Combined-balance rows always outrank a plain end-balance row,
+      // regardless of populated-month count — a +1000 bump keeps this a
+      // two-tier preference (combined beats plain, populated count only
+      // breaks ties within the same tier) without a separate code path.
+      const score = populatedMonthCount(row ?? []) + (isCombinedBalance ? 1000 : 0);
       if (score > balanceRowScore) {
         balanceRowScore = score;
         balanceRowIndex = r;
