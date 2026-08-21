@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { addUnit, removeUnit } from "@/app/dues/actions";
+import { addUnit, clearAllDuesData, removeUnit } from "@/app/dues/actions";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
+import { ClearAllDataButton } from "@/components/ui/ClearAllDataButton";
 import { fmt } from "@/lib/money";
 import { Plus, X } from "@/components/bid-ledger/icons";
 
@@ -92,6 +93,16 @@ export function UnitManager({ units }: { units: UnitRow[] }) {
         </Button>
       </form>
       {error && <p className="mt-2 text-xs text-danger">{error}</p>}
+
+      {units.length > 0 && (
+        <ClearAllDataButton
+          label="Clear all dues data"
+          confirmMessage={`This permanently deletes all ${units.length} unit${
+            units.length === 1 ? "" : "s"
+          } and every charge ever generated or imported for them — not just this month. This cannot be undone.`}
+          onConfirm={clearAllDuesData}
+        />
+      )}
     </div>
   );
 }

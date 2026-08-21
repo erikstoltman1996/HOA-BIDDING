@@ -70,6 +70,21 @@ export async function removeUnit(unitId: string) {
   refresh();
 }
 
+/**
+ * The nuclear option, same idea as clearAllExpenseData: deletes every unit
+ * for the org, which cascades (via the dues_charges FK) to every charge
+ * ever generated or imported for them, across all time. Irreversible; the
+ * confirming UI (UnitManager) is what stands between a stray click and
+ * actually losing everything.
+ */
+export async function clearAllDuesData() {
+  const admin = await requireAdmin();
+  const supabase = await createClient();
+  const { error } = await supabase.from("units").delete().eq("org_id", admin.org_id!);
+  if (error) throw new Error(error.message);
+  refresh();
+}
+
 // --- Charges --------------------------------------------------------------
 
 /**

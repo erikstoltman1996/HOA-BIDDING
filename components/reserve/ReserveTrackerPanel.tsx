@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import {
   addReserveAsset,
+  clearAllReserveData,
   removeReserveAsset,
   updateReserveSettings,
 } from "@/app/reserve/actions";
@@ -14,6 +15,7 @@ import {
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
 import { ExportCsvButton } from "@/components/ExportCsvButton";
+import { ClearAllDataButton } from "@/components/ui/ClearAllDataButton";
 import { projectOutlookMonthly, type MonthProjection } from "@/lib/reserveMonthlyProjection";
 import { FinancialImport } from "@/components/reserve/FinancialImport";
 import { fmt } from "@/lib/money";
@@ -497,6 +499,13 @@ function AssetManager({
         </Button>
       </form>
       {error && <p className="mt-2 text-xs text-danger">{error}</p>}
+
+      <ClearAllDataButton
+        label="Clear all reserve data"
+        confirmMessage="This permanently resets the current balance and annual contribution to unset, and deletes all
+          tracked assets. This cannot be undone."
+        onConfirm={clearAllReserveData}
+      />
     </div>
   );
 }

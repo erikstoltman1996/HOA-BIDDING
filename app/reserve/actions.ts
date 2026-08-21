@@ -52,6 +52,27 @@ export async function removeReserveAsset(assetId: string) {
   revalidatePath("/reserve");
 }
 
+/**
+ * The nuclear option, same idea as clearAllExpenseData: deletes the org's
+ * reserve_settings row (balance/contribution reset to unset, not just
+ * zeroed — the page already treats a missing row as "not set up yet") and
+ * every tracked asset. Irreversible; the confirming UI (AssetManager) is
+ * what stands between a stray click and actually losing everything.
+ */
+export async function clearAllReserveData() {
+  const admin = await requireAdmin();
+  const supabase = await createClient();
+  const { error: settingsError } = await supabase
+    .from("reserve_settings")
+    .delete()
+    .eq("org_id", admin.org_id!);
+  if (settingsError) throw new Error(settingsError.message);
+  const { error: assetsError } = await supabase.from("reserve_assets").delete().eq("org_id", admin.org_id!);
+  if (assetsError) throw new Error(assetsError.message);
+  revalidatePath("/reserve");
+  revalidatePath("/");
+}
+
 // --- Export ----------------------------------------------------------------
 
 /** Any org member can export — this is read-only, same as viewing the page.
