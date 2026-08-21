@@ -53,3 +53,30 @@ export async function fetchExpensesForPeriod(
 
   return { categories, entries };
 }
+
+/**
+ * The month to land on when the page loads with no ?period= in the URL.
+ * Defaulting to the real calendar month is wrong for an org whose actual
+ * entered/imported data lives in other months (e.g. an admin who just
+ * bulk-imported a January–June export in August) — every fresh visit to
+ * /expenses would land on a month that's genuinely empty, which reads as
+ * "my data disappeared" even though nothing is wrong. Landing on the most
+ * recent month that actually has a number in it fixes that; only an org
+ * with no expense data at all falls back to the current calendar month.
+ */
+export async function fetchMostRecentExpensePeriod(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  orgId: string,
+): Promise<string | null> {
+  const { data: categoriesRaw } = await supabase.from("expense_categories").select("id").eq("org_id", orgId);
+  const categoryIds = (categoriesRaw ?? []).map((c) => c.id);
+  if (categoryIds.length === 0) return null;
+
+  const { data } = await supabase
+    .from("expense_entries")
+    .select("period")
+    .in("category_id", categoryIds)
+    .order("period", { ascending: false })
+    .limit(1);
+  return data?.[0]?.period ?? null;
+}

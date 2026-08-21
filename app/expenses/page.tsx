@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
-import { fetchExpensesForPeriod } from "@/lib/expensesData";
+import { fetchExpensesForPeriod, fetchMostRecentExpensePeriod } from "@/lib/expensesData";
 import { summarizeExpenses } from "@/lib/expenses";
 import { AppHeader } from "@/components/AppHeader";
 import { SectionNav } from "@/components/SectionNav";
@@ -30,10 +30,17 @@ export default async function ExpensesPage({
   }
 
   const { period: periodParam } = await searchParams;
-  const period = periodParam || currentPeriod();
-
   const supabase = await createClient();
   const isAdmin = profile.role === "admin";
+
+  // No explicit ?period= — e.g. arriving fresh from the nav tab, not from
+  // a month link. Landing on today's calendar month by default is wrong
+  // once real data lives elsewhere (a bulk import of past months, testing
+  // ahead of the current date, etc.) — it just shows a blank table that
+  // reads as "my numbers are gone." Land on the most recent month that
+  // actually has something entered instead; only an org with zero expense
+  // history anywhere falls back to the current calendar month.
+  const period = periodParam || (await fetchMostRecentExpensePeriod(supabase, profile.org_id)) || currentPeriod();
 
   const [{ data: org }, { categories, entries }] = await Promise.all([
     supabase.from("organizations").select("*").eq("id", profile.org_id).single(),
