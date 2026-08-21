@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
-import { fetchDuesChargesForPeriod } from "@/lib/duesData";
+import { fetchDuesChargesForPeriod, fetchMostRecentDuesPeriod } from "@/lib/duesData";
 import { AppHeader } from "@/components/AppHeader";
 import { SectionNav } from "@/components/SectionNav";
 import { UnitManager } from "@/components/dues/UnitManager";
 import { DuesTable } from "@/components/dues/DuesTable";
 import { DuesSummary } from "@/components/dues/DuesSummary";
+import { DuesImport } from "@/components/dues/DuesImport";
 import { GenerateChargesButton } from "@/components/dues/GenerateChargesButton";
 import { ExportCsvButton } from "@/components/ExportCsvButton";
 import { currentPeriod, formatPeriodLabel, shiftPeriod, summarizeDues } from "@/lib/dues";
@@ -29,10 +30,12 @@ export default async function DuesPage({
   }
 
   const { period: periodParam } = await searchParams;
-  const period = periodParam || currentPeriod();
-
   const supabase = await createClient();
   const isAdmin = profile.role === "admin";
+
+  // Same "land on real data, not blank today" logic as /expenses and the
+  // Reserve cash summary — see fetchMostRecentDuesPeriod.
+  const period = periodParam || (await fetchMostRecentDuesPeriod(supabase, profile.org_id)) || currentPeriod();
 
   const [{ data: org }, { units, charges }] = await Promise.all([
     supabase.from("organizations").select("*").eq("id", profile.org_id).single(),
@@ -99,6 +102,15 @@ export default async function DuesPage({
               </summary>
               <div className="mt-2">
                 <UnitManager units={units} />
+              </div>
+            </details>
+            <details className="group mb-6">
+              <summary className="flex cursor-pointer select-none items-center gap-1 text-sm font-medium text-ink-soft hover:text-ink">
+                <ChevronRight size={14} className="transition-transform group-open:rotate-90" />
+                Import from a bookkeeping export
+              </summary>
+              <div className="mt-2">
+                <DuesImport />
               </div>
             </details>
           </>

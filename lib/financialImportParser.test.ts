@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   aggregateTransactionList,
+  parseDuesBreakdown,
   parseExpenseBreakdown,
   parseFinancialImport,
   type Cell,
@@ -256,7 +257,9 @@ function profitAndLossGrid(): Cell[][] {
     [null, null, "Jul 2025", "Aug 2025", "Sep 2025", "Oct 2025", "Nov 2025", "Dec 2025", "Jan 2026", "TOTAL"],
     [null, "Income"],
     [1, "Captal Reserves Contribution", 500, null, null, null, 500, null, null, 1000],
-    [null, "Total Income", 500, null, null, null, 500, null, null, 1000],
+    [2, "Condo Dues - Unit A", 250, 250, 250, 250, 0, 250, 250, 1700],
+    [3, "Condo Dues - Unit B", 250, 0, 0, 0, 0, 0, null, 250],
+    [null, "Total Income", 1000, 250, 250, 250, 500, 250, 250, 2950],
     [null, "Expenses"],
     [1, "Insurance", null, null, 200, null, null, null, 200, 400],
     [2, "Electric", 25, 25, 25, 25, 25, 25, 25, 175],
@@ -290,6 +293,38 @@ describe("parseExpenseBreakdown on a QuickBooks-style Profit & Loss export", () 
       { period: "2025-09-01", amount: 200 },
       { period: "2026-01-01", amount: 200 }, // TOTAL column excluded — not a month
     ]);
+  });
+});
+
+describe("parseDuesBreakdown on a QuickBooks-style Profit & Loss export", () => {
+  it("finds per-unit dues rows inside the Income section and ignores everything else there", () => {
+    const result = parseDuesBreakdown(profitAndLossGrid(), 1999);
+    expect(result.units.map((u) => u.label)).toEqual(["Unit A", "Unit B"]);
+    // "1 Captal Reserves Contribution" is in the same Income section but
+    // isn't dues-labeled, and must not show up as a "unit."
+    expect(result.units.some((u) => u.label.includes("Reserve"))).toBe(false);
+  });
+
+  it("strips the \"Condo Dues -\" prefix down to just the unit name", () => {
+    const result = parseDuesBreakdown(profitAndLossGrid(), 1999);
+    const unitA = result.units.find((u) => u.label === "Unit A")!;
+    expect(unitA.entries).toEqual([
+      { period: "2025-07-01", amount: 250 },
+      { period: "2025-08-01", amount: 250 },
+      { period: "2025-09-01", amount: 250 },
+      { period: "2025-10-01", amount: 250 },
+      { period: "2025-11-01", amount: 0 }, // an explicit $0 month is kept, not skipped
+      { period: "2025-12-01", amount: 250 },
+      { period: "2026-01-01", amount: 250 },
+    ]);
+  });
+
+  it("skips blank months rather than treating them as $0", () => {
+    const result = parseDuesBreakdown(profitAndLossGrid(), 1999);
+    const unitB = result.units.find((u) => u.label === "Unit B")!;
+    // Unit B's January cell is blank in the fixture — must be absent, not
+    // a fabricated { amount: 0 } entry.
+    expect(unitB.entries.some((e) => e.period === "2026-01-01")).toBe(false);
   });
 });
 
@@ -389,5 +424,31 @@ describe("parseExpenseBreakdown on a transaction list", () => {
     const result = parseExpenseBreakdown(transactionListGrid(), 1999);
     const bookkeeping = result.categories.find((c) => c.label === "Bookkeeping Fees");
     expect(bookkeeping?.entries[0].period).toBe("2026-01-01");
+  });
+});
+
+describe("dues detection on a transaction list", () => {
+  it("groups dues deposits by Name (the paying unit), not by Account", () => {
+    // Every deposit in the fixture shares one Account ("HOA Dues Income")
+    // — grouping by Account alone would collapse Unit A and Unit B into a
+    // single lump sum. Name is what actually tells them apart.
+    const result = aggregateTransactionList(transactionListGrid());
+    expect(result.duesUnits.map((u) => u.label).sort()).toEqual(["Unit A", "Unit B"]);
+    const unitA = result.duesUnits.find((u) => u.label === "Unit A")!;
+    expect(unitA.entries).toEqual([
+      { period: "2026-01-01", amount: 450 },
+      { period: "2026-02-01", amount: 450 },
+    ]);
+  });
+
+  it("never lets a dues deposit leak into expense categories", () => {
+    const result = aggregateTransactionList(transactionListGrid());
+    expect(result.expenseCategories.some((c) => c.label === "HOA Dues Income")).toBe(false);
+  });
+
+  it("parseDuesBreakdown produces the same per-unit shape, ignoring startYear entirely", () => {
+    const result = parseDuesBreakdown(transactionListGrid(), 1999);
+    const unitB = result.units.find((u) => u.label === "Unit B")!;
+    expect(unitB.entries).toEqual([{ period: "2026-01-01", amount: 450 }]);
   });
 });

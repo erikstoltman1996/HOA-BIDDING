@@ -76,6 +76,25 @@ export interface ParsedExpenseBreakdown {
   warnings: string[];
 }
 
+export interface DetectedDuesEntry {
+  /** First-of-month date string, e.g. "2026-07-01". */
+  period: string;
+  amount: number;
+}
+
+export interface DetectedDuesUnit {
+  /** The unit identifier, e.g. "Unit A" — a common "Condo Dues -" /
+   *  "Dues -" prefix is stripped when present (see extractUnitLabel), so
+   *  this reads as a unit name rather than a full account-line label. */
+  label: string;
+  entries: DetectedDuesEntry[];
+}
+
+export interface ParsedDuesBreakdown {
+  units: DetectedDuesUnit[];
+  warnings: string[];
+}
+
 const MONTH_NAMES = [
   "january", "february", "march", "april", "may", "june",
   "july", "august", "september", "october", "november", "december",
@@ -92,6 +111,20 @@ const BALANCE_LABEL_RE = /end(ing)?\s*(bank\s*)?balance|cash\s*balance/i;
 const COMBINED_BALANCE_LABEL_RE = /total\s+(for\s+)?checking,?\s*savings,?\s*(and\s*)?cds?/i;
 const RESERVE_WORD_RE = /reserve/i;
 const CONTRIBUTION_WORD_RE = /(contribution|fund)/i;
+// "Dues" and "assessment" both name the same thing across different HOAs
+// and condo associations — never hardcode just one term (see CLAUDE.md's
+// design notes on not assuming "HOA"-specific phrasing).
+const DUES_LABEL_RE = /\bdues\b|\bassessments?\b/i;
+
+/** A row labeled like "Condo Dues - Unit A" or "HOA Dues: 123 Main St"
+ *  names a unit after the dues/assessment word and a separator — strip
+ *  down to just that part so the imported unit is called "Unit A", not
+ *  the full account-line label. Falls back to the untouched label when a
+ *  file doesn't follow this convention, so nothing is silently discarded. */
+function extractUnitLabel(rawLabel: string): string {
+  const match = rawLabel.match(/(?:dues|assessments?)\s*[-–:]\s*(.+)$/i);
+  return match ? match[1].trim() : rawLabel;
+}
 
 function cellText(cell: Cell): string {
   if (cell === null || cell === undefined) return "";
@@ -222,6 +255,11 @@ interface TransactionHeader {
   /** null if the file has no type column at all — still usable, just
    *  can't tell income transactions apart from expense ones by type. */
   typeCol: number | null;
+  /** QuickBooks' "Name" column — the customer/vendor a transaction is
+   *  tagged with. Every dues deposit typically shares one Account ("HOA
+   *  Dues Income"), so Account alone can't tell units apart; Name usually
+   *  can (the paying owner/unit). null if the file has no such column. */
+  nameCol: number | null;
 }
 
 /** A transaction list's header row is unambiguous — exact (case-
@@ -235,15 +273,24 @@ function findTransactionHeaderRow(grid: Cell[][]): TransactionHeader | null {
     let accountCol = -1;
     let amountCol = -1;
     let typeCol = -1;
+    let nameCol = -1;
     row.forEach((cell, c) => {
       const t = cellText(cell).toLowerCase().trim();
       if (t === "date") dateCol = c;
       else if (t === "account") accountCol = c;
       else if (t === "amount") amountCol = c;
       else if (t === "type" || t === "transaction type") typeCol = c;
+      else if (t === "name") nameCol = c;
     });
     if (dateCol >= 0 && accountCol >= 0 && amountCol >= 0) {
-      return { rowIndex: r, dateCol, accountCol, amountCol, typeCol: typeCol >= 0 ? typeCol : null };
+      return {
+        rowIndex: r,
+        dateCol,
+        accountCol,
+        amountCol,
+        typeCol: typeCol >= 0 ? typeCol : null,
+        nameCol: nameCol >= 0 ? nameCol : null,
+      };
     }
   }
   return null;
@@ -259,6 +306,7 @@ const INCOME_TRANSACTION_TYPES = new Set([
 
 export interface TransactionListAggregate {
   expenseCategories: DetectedExpenseCategory[];
+  duesUnits: DetectedDuesUnit[];
   contribution: DetectedContribution | null;
   warnings: string[];
 }
@@ -266,19 +314,21 @@ export interface TransactionListAggregate {
 /**
  * Aggregates a flat transaction list by (Account, calendar month of Date),
  * splitting reserve-related transactions (an Account containing "reserve",
- * e.g. "Capital Reserve Transfer") into a contribution signal and
- * everything else into expense categories — the same shape
- * parseExpenseBreakdown produces from a pivot file, so downstream code
- * never needs to know which shape the source file actually was.
+ * e.g. "Capital Reserve Transfer") into a contribution signal, dues/
+ * assessment income transactions into per-unit dues, and everything else
+ * into expense categories — the same shapes parseExpenseBreakdown and
+ * parseDuesBreakdown produce from a pivot file, so downstream code never
+ * needs to know which shape the source file actually was.
  */
 export function aggregateTransactionList(grid: Cell[][]): TransactionListAggregate {
   const warnings: string[] = [];
   const header = findTransactionHeaderRow(grid);
   if (!header) {
-    return { expenseCategories: [], contribution: null, warnings: [] };
+    return { expenseCategories: [], duesUnits: [], contribution: null, warnings: [] };
   }
 
   const expenseTotals = new Map<string, Map<string, number>>(); // account -> period -> sum
+  const duesTotals = new Map<string, Map<string, number>>(); // account -> period -> sum
   const reserveTotals = new Map<string, number>(); // period -> sum
 
   for (let r = header.rowIndex + 1; r < grid.length; r++) {
@@ -288,10 +338,26 @@ export function aggregateTransactionList(grid: Cell[][]): TransactionListAggrega
     const amount = cellNumber(row[header.amountCol]);
     if (!date || !account || amount === null) continue;
 
-    const type = header.typeCol !== null ? cellText(row[header.typeCol]).toLowerCase().trim() : "";
-    if (INCOME_TRANSACTION_TYPES.has(type)) continue;
-
     const period = periodKey(date);
+    const type = header.typeCol !== null ? cellText(row[header.typeCol]).toLowerCase().trim() : "";
+    if (INCOME_TRANSACTION_TYPES.has(type)) {
+      // Income transactions are normally excluded entirely (dues income is
+      // tracked on the Dues page, not as a negative-looking "expense") —
+      // but a dues/assessment-labeled one is exactly what the Dues import
+      // is looking for, so capture it before moving on. Every dues deposit
+      // typically shares one Account ("HOA Dues Income"), which alone
+      // would collapse every unit into one lump sum — Name (the customer
+      // QuickBooks tags each deposit with, usually the paying owner/unit)
+      // is the real per-unit signal when the file has one.
+      if (DUES_LABEL_RE.test(account)) {
+        const name = header.nameCol !== null ? cellText(row[header.nameCol]).trim() : "";
+        const duesKey = name || account;
+        if (!duesTotals.has(duesKey)) duesTotals.set(duesKey, new Map());
+        const perPeriod = duesTotals.get(duesKey)!;
+        perPeriod.set(period, (perPeriod.get(period) ?? 0) + amount);
+      }
+      continue;
+    }
 
     if (RESERVE_WORD_RE.test(account)) {
       reserveTotals.set(period, (reserveTotals.get(period) ?? 0) + amount);
@@ -305,6 +371,13 @@ export function aggregateTransactionList(grid: Cell[][]): TransactionListAggrega
 
   const expenseCategories: DetectedExpenseCategory[] = [...expenseTotals.entries()].map(([label, periods]) => ({
     label,
+    entries: [...periods.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([period, amount]) => ({ period, amount })),
+  }));
+
+  const duesUnits: DetectedDuesUnit[] = [...duesTotals.entries()].map(([label, periods]) => ({
+    label: extractUnitLabel(label),
     entries: [...periods.entries()]
       .sort((a, b) => a[0].localeCompare(b[0]))
       .map(([period, amount]) => ({ period, amount })),
@@ -326,7 +399,7 @@ export function aggregateTransactionList(grid: Cell[][]): TransactionListAggrega
     warnings.push("No expense transactions found in this file.");
   }
 
-  return { expenseCategories, contribution, warnings };
+  return { expenseCategories, duesUnits, contribution, warnings };
 }
 
 export function parseFinancialImport(grid: Cell[][]): ParsedFinancialImport {
@@ -450,29 +523,116 @@ export function parseFinancialImport(grid: Cell[][]): ParsedFinancialImport {
   return { detectedBalance, detectedContribution, warnings };
 }
 
-// --- Full expense breakdown (category x month) -----------------------------
+// --- Shared by both section walkers (expense x month, dues x month) -------
 
 const TOTAL_EXPENSE_RE = /total\s*expense/i;
 const TOTAL_INCOME_RE = /total\s*income/i;
 /** A row that's itself a section title rather than a line item — e.g.
  *  "Expenses - Monthly HOA". Distinguished from a real category row by
- *  also containing the word "monthly" alongside "expense", which no real
- *  category label in practice does. */
+ *  requiring it to also have no numeric data of its own, which no real
+ *  category/unit row in practice lacks. */
 const EXPENSE_SECTION_HEADER_RE = /expense/i;
+const INCOME_SECTION_HEADER_RE = /income/i;
+/** Never matches anything — used as the "no additional backstop needed"
+ *  default for walkSectionRows' stopAt parameter. */
+const NEVER_RE = /(?!)/;
+
+/**
+ * Resolves a header row's month columns into real calendar periods,
+ * preferring each column's own embedded year (e.g. "Jul 2025" — a real
+ * QuickBooks export labels columns this way) when every column has one,
+ * so a fiscal-year crossing needs no inference at all. Falls back to
+ * `startYear` + an assumed chronological Jan-Dec (or fiscal-year) sequence
+ * for bare month names ("July"), which carry no year of their own.
+ * Shared by parseExpenseBreakdown and parseDuesBreakdown so the two can
+ * never silently diverge on how a file's columns map to dates.
+ */
+function resolvePeriods(
+  grid: Cell[][],
+  header: MonthHeader,
+  orderedMonthCols: number[],
+  startYear: number,
+): { periods: string[]; warning?: undefined } | { periods?: undefined; warning: string } {
+  const monthLabels = orderedMonthCols.map((c) => parseMonthLabel(grid[header.rowIndex]?.[c]));
+  if (monthLabels.some((m) => m === null)) {
+    return { warning: "Some month columns didn't resolve to a recognizable month name" };
+  }
+  const labels = monthLabels as MonthLabel[];
+
+  if (labels.every((m) => m.year !== null)) {
+    return { periods: labels.map((m) => `${m.year}-${String(m.monthIndex + 1).padStart(2, "0")}-01`) };
+  }
+
+  const monthIndices = labels.map((m) => m.monthIndex);
+  for (let i = 1; i < monthIndices.length; i++) {
+    const expected = (monthIndices[i - 1] + 1) % 12;
+    if (monthIndices[i] !== expected) {
+      return {
+        warning:
+          "Month columns in this file aren't in sequential order — this importer assumes a normal Jan-Dec (or fiscal-year) sequence",
+      };
+    }
+  }
+  const periods = monthIndices.map((mi, i) => {
+    // Walk forward from the first column's (year, month) rather than
+    // assuming every column is in the same calendar year — a fiscal year
+    // starting mid-year crosses into the next calendar year partway through.
+    const firstMonth = monthIndices[0];
+    const yearsElapsed = Math.floor((firstMonth + i) / 12);
+    const y = startYear + yearsElapsed;
+    return `${y}-${String(mi + 1).padStart(2, "0")}-01`;
+  });
+  return { periods };
+}
+
+/**
+ * Walks upward from a "Total X" row collecting line-item rows until it
+ * hits the section's own header (a row matching `sectionWordRe` with no
+ * numeric data of its own — a real line item always has at least one
+ * populated month) or `stopAtRe` as a hard backstop against bleeding into
+ * a neighboring section. Shared by the expense and dues walkers, which are
+ * structurally identical, just anchored to different section/total rows.
+ */
+function walkSectionRows(
+  grid: Cell[][],
+  header: MonthHeader,
+  firstMonthCol: number,
+  orderedMonthCols: number[],
+  totalRowIndex: number,
+  sectionWordRe: RegExp,
+  stopAtRe: RegExp = NEVER_RE,
+): { label: string; row: Cell[] }[] {
+  const rows: { label: string; row: Cell[] }[] = [];
+  for (let r = totalRowIndex - 1; r >= 0; r--) {
+    if (r === header.rowIndex) break;
+    const row = grid[r] ?? [];
+    const label = rowLabel(row, firstMonthCol);
+    if (!label) continue; // blank separator row — keep walking up
+    if (stopAtRe.test(label)) break;
+    if (sectionWordRe.test(label) && !orderedMonthCols.some((c) => cellNumber(row[c]) !== null)) break;
+    rows.push({ label, row });
+  }
+  rows.reverse(); // walked upward, so restore original top-to-bottom order
+  return rows;
+}
+
+function entriesFromRow(row: Cell[], orderedMonthCols: number[], periods: string[]): DetectedDuesEntry[] {
+  const entries: DetectedDuesEntry[] = [];
+  orderedMonthCols.forEach((c, i) => {
+    const amount = cellNumber(row[c]);
+    if (amount !== null) entries.push({ period: periods[i], amount });
+  });
+  return entries;
+}
+
+// --- Full expense breakdown (category x month) -----------------------------
 
 /**
  * Finds every expense line-item row (between an "Expenses" section and its
  * "Total Expense" row) and reads out its value for each month column,
- * mapped to a real calendar period using `startYear` as the year the
- * *first* month column belongs to — spreadsheets reliably label columns
- * with a month name, never a year, so there's no way to recover the year
- * from the file alone. Assumes month columns are chronologically
- * sequential (true of every real export seen so far); if they're not,
- * this degrades to an empty result with a warning rather than silently
- * mislabeling periods.
- *
- * `startYear` is only used for the pivot-file path — a transaction list
- * carries a real date per row, so its periods need no anchor year at all.
+ * mapped to a real calendar period (see resolvePeriods). `startYear` is
+ * only used on the pivot-file path with bare month-name headers — a
+ * transaction list carries a real date per row and needs no anchor year.
  */
 export function parseExpenseBreakdown(grid: Cell[][], startYear: number): ParsedExpenseBreakdown {
   const transactionHeader = findTransactionHeaderRow(grid);
@@ -494,49 +654,11 @@ export function parseExpenseBreakdown(grid: Cell[][], startYear: number): Parsed
   const firstMonthCol = Math.min(...header.monthCols);
   const orderedMonthCols = [...header.monthCols].sort((a, b) => a - b);
 
-  const monthLabels = orderedMonthCols.map((c) => parseMonthLabel(grid[header.rowIndex]?.[c]));
-  if (monthLabels.some((m) => m === null)) {
-    return {
-      categories: [],
-      warnings: ["Some month columns didn't resolve to a recognizable month name — add categories manually."],
-    };
+  const resolved = resolvePeriods(grid, header, orderedMonthCols, startYear);
+  if (!resolved.periods) {
+    return { categories: [], warnings: [`${resolved.warning} — add categories manually.`] };
   }
-  const labels = monthLabels as MonthLabel[];
-
-  let periods: string[];
-  if (labels.every((m) => m.year !== null)) {
-    // Every column already carries its own year (e.g. "Jul 2025" — a real
-    // QuickBooks Profit & Loss export labels columns this way) — just use
-    // it directly. No need to assume a sequential Jan-Dec order or infer a
-    // fiscal-year crossing from startYear; the file already says exactly
-    // which calendar month each column is.
-    periods = labels.map((m) => `${m.year}-${String(m.monthIndex + 1).padStart(2, "0")}-01`);
-  } else {
-    // Bare month names ("July") carry no year of their own — anchor from
-    // startYear and assume the usual chronological Jan-Dec (or fiscal-year)
-    // sequence, same as ever.
-    const monthIndices = labels.map((m) => m.monthIndex);
-    for (let i = 1; i < monthIndices.length; i++) {
-      const expected = (monthIndices[i - 1] + 1) % 12;
-      if (monthIndices[i] !== expected) {
-        return {
-          categories: [],
-          warnings: [
-            "Month columns in this file aren't in sequential order — this importer assumes a normal Jan-Dec (or fiscal-year) sequence. Add categories manually.",
-          ],
-        };
-      }
-    }
-    periods = monthIndices.map((mi, i) => {
-      // Walk forward from the first column's (year, month) rather than
-      // assuming every column is in the same calendar year — a fiscal year
-      // starting mid-year crosses into the next calendar year partway through.
-      const firstMonth = monthIndices[0];
-      const yearsElapsed = Math.floor((firstMonth + i) / 12);
-      const y = startYear + yearsElapsed;
-      return `${y}-${String(mi + 1).padStart(2, "0")}-01`;
-    });
-  }
+  const periods = resolved.periods;
 
   let totalExpenseRow = -1;
   grid.forEach((row, r) => {
@@ -552,31 +674,19 @@ export function parseExpenseBreakdown(grid: Cell[][], startYear: number): Parsed
     };
   }
 
-  // Walk upward from the Total Expense row, collecting line-item rows,
-  // stopping at the section header above them (or Total Income, as a hard
-  // backstop against bleeding into the income section).
-  const categories: DetectedExpenseCategory[] = [];
-  for (let r = totalExpenseRow - 1; r >= 0; r--) {
-    if (r === header.rowIndex) break;
-    const row = grid[r] ?? [];
-    const label = rowLabel(row, firstMonthCol);
-    if (!label) continue; // blank separator row — keep walking up
-    if (TOTAL_INCOME_RE.test(label)) break;
-    if (EXPENSE_SECTION_HEADER_RE.test(label) && !orderedMonthCols.some((c) => cellNumber(row[c]) !== null)) {
-      // A row that mentions "expense" but has no numeric data of its own
-      // is the section title (e.g. "Expenses - Monthly HOA"), not a
-      // category — stop here.
-      break;
-    }
-
-    const entries: DetectedExpenseEntry[] = [];
-    orderedMonthCols.forEach((c, i) => {
-      const amount = cellNumber(row[c]);
-      if (amount !== null) entries.push({ period: periods[i], amount });
-    });
-    categories.push({ label, entries });
-  }
-  categories.reverse(); // walked upward, so restore original top-to-bottom order
+  const rawRows = walkSectionRows(
+    grid,
+    header,
+    firstMonthCol,
+    orderedMonthCols,
+    totalExpenseRow,
+    EXPENSE_SECTION_HEADER_RE,
+    TOTAL_INCOME_RE, // hard backstop against bleeding into the income section
+  );
+  const categories: DetectedExpenseCategory[] = rawRows.map(({ label, row }) => ({
+    label,
+    entries: entriesFromRow(row, orderedMonthCols, periods),
+  }));
 
   if (categories.length === 0) {
     warnings.push('Found a "Total Expense" row but no category rows above it — add categories manually.');
@@ -588,4 +698,81 @@ export function parseExpenseBreakdown(grid: Cell[][], startYear: number): Parsed
   }
 
   return { categories, warnings };
+}
+
+// --- Dues breakdown (unit x month) -----------------------------------------
+
+/**
+ * Finds every dues/assessment line-item row inside a file's Income section
+ * (between an "Income" section and its "Total Income" row) and reads out
+ * its per-month value — actual cash received, on a cash-accounting file
+ * like a real P&L — as a per-unit dues breakdown. Everything else in
+ * Income (a reserve contribution, late fees, a one-off deposit, ...) is
+ * deliberately left alone; only rows whose label contains "dues" or
+ * "assessment" are treated as a unit (see DUES_LABEL_RE).
+ */
+export function parseDuesBreakdown(grid: Cell[][], startYear: number): ParsedDuesBreakdown {
+  const transactionHeader = findTransactionHeaderRow(grid);
+  if (transactionHeader) {
+    const agg = aggregateTransactionList(grid);
+    const warnings = [...agg.warnings];
+    if (agg.duesUnits.length === 0) {
+      warnings.push(
+        'No dues/assessment income transactions found (an Account containing "dues" or "assessment") — add units manually.',
+      );
+    }
+    return { units: agg.duesUnits, warnings };
+  }
+
+  const warnings: string[] = [];
+  const header = findMonthHeaderRow(grid);
+
+  if (!header) {
+    return {
+      units: [],
+      warnings: ["Couldn't find a row of month names in this file's layout — add units manually."],
+    };
+  }
+
+  const firstMonthCol = Math.min(...header.monthCols);
+  const orderedMonthCols = [...header.monthCols].sort((a, b) => a - b);
+
+  const resolved = resolvePeriods(grid, header, orderedMonthCols, startYear);
+  if (!resolved.periods) {
+    return { units: [], warnings: [`${resolved.warning} — add units manually.`] };
+  }
+  const periods = resolved.periods;
+
+  let totalIncomeRow = -1;
+  grid.forEach((row, r) => {
+    if (r === header.rowIndex) return;
+    const label = rowLabel(row ?? [], firstMonthCol);
+    if (totalIncomeRow === -1 && TOTAL_INCOME_RE.test(label)) totalIncomeRow = r;
+  });
+
+  if (totalIncomeRow === -1) {
+    return {
+      units: [],
+      warnings: ["Couldn't find a \"Total Income\" row to anchor the dues list — add units manually."],
+    };
+  }
+
+  const rawRows = walkSectionRows(grid, header, firstMonthCol, orderedMonthCols, totalIncomeRow, INCOME_SECTION_HEADER_RE);
+  const units: DetectedDuesUnit[] = rawRows
+    .filter(({ label }) => DUES_LABEL_RE.test(label))
+    .map(({ label, row }) => ({
+      label: extractUnitLabel(label),
+      entries: entriesFromRow(row, orderedMonthCols, periods),
+    }));
+
+  if (units.length === 0) {
+    warnings.push('Found a "Total Income" row but no line item matched a dues/assessment label — add units manually.');
+  }
+  if (orderedMonthCols.length > 12) {
+    warnings.push(
+      `Found ${orderedMonthCols.length} month columns (more than a year's worth) — double-check the imported dates below before saving, especially if any month name appears more than once in this file.`,
+    );
+  }
+
+  return { units, warnings };
 }

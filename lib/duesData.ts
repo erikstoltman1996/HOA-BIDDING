@@ -41,3 +41,28 @@ export async function fetchDuesChargesForPeriod(
 
   return { units, charges };
 }
+
+/**
+ * The month to land on when /dues loads with no ?period= in the URL — same
+ * reasoning as fetchMostRecentExpensePeriod: defaulting to the real
+ * calendar month is wrong once real charges live in other months (a bulk
+ * import of past months, testing ahead of the current date), and shows up
+ * as "my charges disappeared" even though nothing is wrong. Falls back to
+ * the current calendar month only when the org has no charges at all.
+ */
+export async function fetchMostRecentDuesPeriod(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  orgId: string,
+): Promise<string | null> {
+  const { data: unitsRaw } = await supabase.from("units").select("id").eq("org_id", orgId);
+  const unitIds = (unitsRaw ?? []).map((u) => u.id);
+  if (unitIds.length === 0) return null;
+
+  const { data } = await supabase
+    .from("dues_charges")
+    .select("period")
+    .in("unit_id", unitIds)
+    .order("period", { ascending: false })
+    .limit(1);
+  return data?.[0]?.period ?? null;
+}
