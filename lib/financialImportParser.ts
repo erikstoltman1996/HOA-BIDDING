@@ -111,6 +111,14 @@ const BALANCE_LABEL_RE = /end(ing)?\s*(bank\s*)?balance|cash\s*balance/i;
 const COMBINED_BALANCE_LABEL_RE = /total\s+(for\s+)?checking,?\s*savings,?\s*(and\s*)?cds?/i;
 const RESERVE_WORD_RE = /reserve/i;
 const CONTRIBUTION_WORD_RE = /(contribution|fund)/i;
+// A line like "Transfer to Primary Savings" or "Transfer to CD #1" is
+// money moving from checking into the HOA's own reserve savings/CD
+// accounts — not spent, just relocated. Doesn't contain "reserve" as a
+// word, so RESERVE_WORD_RE alone misses it; without this, it gets counted
+// as a real operating expense, which both inflates the expense total and
+// (since that money is already reflected in the reserve balance) makes
+// the Reserve page's combined cash summary double-subtract it.
+const RESERVE_TRANSFER_RE = /transfer\s+to\s+.*(reserve|saving|\bcds?\b)/i;
 // "Dues" and "assessment" both name the same thing across different HOAs
 // and condo associations — never hardcode just one term (see CLAUDE.md's
 // design notes on not assuming "HOA"-specific phrasing).
@@ -359,7 +367,7 @@ export function aggregateTransactionList(grid: Cell[][]): TransactionListAggrega
       continue;
     }
 
-    if (RESERVE_WORD_RE.test(account)) {
+    if (RESERVE_WORD_RE.test(account) || RESERVE_TRANSFER_RE.test(account)) {
       reserveTotals.set(period, (reserveTotals.get(period) ?? 0) + amount);
       continue;
     }
@@ -683,11 +691,26 @@ export function parseExpenseBreakdown(grid: Cell[][], startYear: number): Parsed
     EXPENSE_SECTION_HEADER_RE,
     TOTAL_INCOME_RE, // hard backstop against bleeding into the income section
   );
-  const categories: DetectedExpenseCategory[] = rawRows.map(({ label, row }) => ({
-    label,
-    entries: entriesFromRow(row, orderedMonthCols, periods),
-  }));
+  // "Transfer to Primary Savings" / "Transfer to CD #1" et al. move money
+  // from checking into the HOA's own reserve accounts — not a real cost,
+  // just a relocation already reflected in the reserve balance. Counting
+  // it as an expense would inflate the total and double-subtract it on
+  // the Reserve page's combined cash summary.
+  const transferRows = rawRows.filter(({ label }) => RESERVE_TRANSFER_RE.test(label));
+  const categories: DetectedExpenseCategory[] = rawRows
+    .filter(({ label }) => !RESERVE_TRANSFER_RE.test(label))
+    .map(({ label, row }) => ({
+      label,
+      entries: entriesFromRow(row, orderedMonthCols, periods),
+    }));
 
+  if (transferRows.length > 0) {
+    warnings.push(
+      `Excluded ${transferRows.length} line${transferRows.length === 1 ? "" : "s"} that move money into reserve ` +
+        `savings/CDs (${transferRows.map((r) => r.label).join(", ")}) from operating expenses — that money isn't ` +
+        "spent, it's relocated, and belongs in the reserve balance instead.",
+    );
+  }
   if (categories.length === 0) {
     warnings.push('Found a "Total Expense" row but no category rows above it — add categories manually.');
   }

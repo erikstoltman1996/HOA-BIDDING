@@ -263,7 +263,8 @@ function profitAndLossGrid(): Cell[][] {
     [null, "Expenses"],
     [1, "Insurance", null, null, 200, null, null, null, 200, 400],
     [2, "Electric", 25, 25, 25, 25, 25, 25, 25, 175],
-    [null, "Total Expenses", 25, 25, 225, 25, 25, 25, 225, 575],
+    [3, "Transfer to CD #1", null, null, null, null, null, 2000, null, 2000],
+    [null, "Total Expenses", 25, 25, 225, 25, 25, 2025, 225, 2575],
     [null, "End Bank Balance", 14928.89, 15312.89, 15040.78, 15046.19, 16046.19, 11730.05, 10099.02],
   ];
 }
@@ -293,6 +294,18 @@ describe("parseExpenseBreakdown on a QuickBooks-style Profit & Loss export", () 
       { period: "2025-09-01", amount: 200 },
       { period: "2026-01-01", amount: 200 }, // TOTAL column excluded — not a month
     ]);
+  });
+
+  it("excludes a reserve/CD transfer line from the expense breakdown, with a warning", () => {
+    // Money moving into a reserve savings account or CD isn't spent — it's
+    // still reserve money, just relocated. Counting it as an operating
+    // expense would both inflate the total and double-subtract it from
+    // the Reserve page's combined cash summary.
+    const result = parseExpenseBreakdown(profitAndLossGrid(), 1999);
+    expect(result.categories.some((c) => c.label.includes("Transfer to CD"))).toBe(false);
+    expect(result.warnings.some((w) => w.includes("Transfer to CD #1") && w.includes("reserve"))).toBe(true);
+    // The real categories on either side of it are untouched.
+    expect(result.categories.map((c) => c.label)).toEqual(["1 Insurance", "2 Electric"]);
   });
 });
 
