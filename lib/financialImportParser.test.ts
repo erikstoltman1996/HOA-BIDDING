@@ -332,12 +332,17 @@ describe("parseDuesBreakdown on a QuickBooks-style Profit & Loss export", () => 
     ]);
   });
 
-  it("skips blank months rather than treating them as $0", () => {
+  it("treats a blank month the same as an explicit $0 — unpaid, not skipped", () => {
+    // Unlike expenses (where "not entered yet" and "$0 spent" are
+    // genuinely different), a blank cell on a monthly dues sheet means
+    // the unit didn't pay that month — the same thing an explicit $0
+    // means. Unit B's January cell is blank in the fixture; it must still
+    // produce a $0 entry, not disappear.
     const result = parseDuesBreakdown(profitAndLossGrid(), 1999);
     const unitB = result.units.find((u) => u.label === "Unit B")!;
-    // Unit B's January cell is blank in the fixture — must be absent, not
-    // a fabricated { amount: 0 } entry.
-    expect(unitB.entries.some((e) => e.period === "2026-01-01")).toBe(false);
+    expect(unitB.entries).toContainEqual({ period: "2026-01-01", amount: 0 });
+    // Every month column gets an entry — 7 in this fixture's header.
+    expect(unitB.entries).toHaveLength(7);
   });
 });
 

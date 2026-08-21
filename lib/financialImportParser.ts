@@ -633,6 +633,18 @@ function entriesFromRow(row: Cell[], orderedMonthCols: number[], periods: string
   return entries;
 }
 
+/**
+ * Same idea as entriesFromRow, but for dues specifically: on a monthly
+ * cash-received sheet, a blank cell means the same thing an explicit $0
+ * does — the unit didn't pay that month — not "no charge was ever billed."
+ * Unlike expenses (where "not entered yet" and "$0 spent" are genuinely
+ * different things worth telling apart), every month here gets an entry,
+ * defaulting a blank cell to 0 rather than dropping it.
+ */
+function duesEntriesFromRow(row: Cell[], orderedMonthCols: number[], periods: string[]): DetectedDuesEntry[] {
+  return orderedMonthCols.map((c, i) => ({ period: periods[i], amount: cellNumber(row[c]) ?? 0 }));
+}
+
 // --- Full expense breakdown (category x month) -----------------------------
 
 /**
@@ -785,7 +797,7 @@ export function parseDuesBreakdown(grid: Cell[][], startYear: number): ParsedDue
     .filter(({ label }) => DUES_LABEL_RE.test(label))
     .map(({ label, row }) => ({
       label: extractUnitLabel(label),
-      entries: entriesFromRow(row, orderedMonthCols, periods),
+      entries: duesEntriesFromRow(row, orderedMonthCols, periods),
     }));
 
   if (units.length === 0) {
