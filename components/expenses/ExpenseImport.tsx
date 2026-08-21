@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { bulkApplyExpenseImport, parseExpenseImportFile } from "@/app/expenses/actions";
+import { bulkApplyExpenseImport, parseExpenseImportFile, undoExpenseImport } from "@/app/expenses/actions";
+import type { ExpenseImportManifest } from "@/app/expenses/actions";
 import type { ParsedExpenseBreakdown } from "@/lib/financialImportParser";
 import { Button } from "@/components/ui/Button";
 import { Input, Label } from "@/components/ui/Input";
@@ -23,8 +24,11 @@ import { formatPeriodLabel } from "@/lib/dues";
 export function ExpenseImport() {
   const currentYear = new Date().getFullYear();
   const [startYear, setStartYear] = useState(String(currentYear));
-  const [status, setStatus] = useState<"idle" | "parsing" | "done" | "applying" | "applied" | "error">("idle");
+  const [status, setStatus] = useState<
+    "idle" | "parsing" | "done" | "applying" | "applied" | "undoing" | "undone" | "error"
+  >("idle");
   const [result, setResult] = useState<ParsedExpenseBreakdown | null>(null);
+  const [manifest, setManifest] = useState<ExpenseImportManifest | null>(null);
   const [error, setError] = useState("");
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -56,11 +60,31 @@ export function ExpenseImport() {
     if (!result || result.categories.length === 0) return;
     setStatus("applying");
     try {
-      await bulkApplyExpenseImport(result.categories);
+      const appliedManifest = await bulkApplyExpenseImport(result.categories);
+      setManifest(appliedManifest);
       setStatus("applied");
     } catch (err) {
       setStatus("error");
       setError(err instanceof Error ? err.message : "Could not save the imported categories");
+    }
+  }
+
+  // Put the wrong file in? This reverses exactly what apply() just did —
+  // restoring whatever was in each cell before (or removing it if nothing
+  // was there), and dropping any category the import created from scratch
+  // as long as nothing else has been added to it since. Only works against
+  // the import still showing on screen — there's no history to undo an
+  // older one from, so leaving the page or applying a second file forgets
+  // this manifest.
+  async function undo() {
+    if (!manifest) return;
+    setStatus("undoing");
+    try {
+      await undoExpenseImport(manifest);
+      setStatus("undone");
+    } catch (err) {
+      setStatus("error");
+      setError(err instanceof Error ? err.message : "Could not remove that import");
     }
   }
 
@@ -111,8 +135,13 @@ export function ExpenseImport() {
 
       {status === "parsing" && <p className="mt-2 text-xs text-ink-soft">Reading file…</p>}
       {status === "error" && <p className="mt-2 text-xs text-danger">{error}</p>}
+      {status === "undone" && (
+        <p className="mt-2 text-xs text-ink-soft">
+          Import removed — every category and amount it added is back to how it was before.
+        </p>
+      )}
 
-      {(status === "done" || status === "applying" || status === "applied") && result && (
+      {(status === "done" || status === "applying" || status === "applied" || status === "undoing") && result && (
         <div className="mt-3 rounded border border-rule bg-paper p-3 text-sm">
           {result.warnings.map((w) => (
             <p key={w} className="mb-2 text-xs text-gold-text">
@@ -146,9 +175,30 @@ export function ExpenseImport() {
                   );
                 })}
               </ul>
-              <Button type="button" variant="outline" onClick={apply} disabled={status === "applying" || status === "applied"}>
-                {status === "applied" ? "Applied" : status === "applying" ? "Applying…" : "Apply — import all categories & amounts"}
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={apply}
+                  disabled={status === "applying" || status === "applied" || status === "undoing"}
+                >
+                  {status === "applied" || status === "undoing"
+                    ? "Applied"
+                    : status === "applying"
+                      ? "Applying…"
+                      : "Apply — import all categories & amounts"}
+                </Button>
+                {(status === "applied" || status === "undoing") && (
+                  <button
+                    type="button"
+                    onClick={undo}
+                    disabled={status === "undoing"}
+                    className="text-xs text-danger hover:opacity-80 disabled:opacity-60"
+                  >
+                    {status === "undoing" ? "Removing…" : "Wrong file? Undo this import"}
+                  </button>
+                )}
+              </div>
 
               {status === "applied" && importedPeriods.length > 0 && (
                 <div className="mt-3 border-t border-rule pt-3">

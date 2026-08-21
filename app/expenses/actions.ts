@@ -72,13 +72,27 @@ export async function parseExpenseImportFile(formData: FormData, startYear: numb
   return parseExpenseBreakdown(grid, startYear);
 }
 
+export interface ExpenseImportManifest {
+  /** Categories this import created from scratch — safe to remove entirely
+   *  on undo, but only if nothing else has been added to them since. */
+  createdCategoryIds: string[];
+  /** Every (category, month) this import wrote to, and whatever amount was
+   *  there immediately before — null means the entry didn't exist yet, so
+   *  undoing it means deleting the row rather than restoring a value. */
+  entryChanges: { categoryId: string; period: string; previousAmount: number | null }[];
+}
+
 /**
  * Applies a parsed breakdown: creates any category that doesn't already
  * exist (matched by name) and upserts every month's amount for it. Called
  * only after the admin has reviewed the parsed preview and clicked Apply —
  * this itself does not re-parse or re-validate the source file.
+ *
+ * Returns a manifest of exactly what it touched, so a wrong-file mistake
+ * can be undone with undoExpenseImport() below instead of having to
+ * manually delete categories one at a time.
  */
-export async function bulkApplyExpenseImport(categories: DetectedExpenseCategory[]) {
+export async function bulkApplyExpenseImport(categories: DetectedExpenseCategory[]): Promise<ExpenseImportManifest> {
   const admin = await requireAdmin();
   const supabase = await createClient();
 
@@ -88,6 +102,7 @@ export async function bulkApplyExpenseImport(categories: DetectedExpenseCategory
     .eq("org_id", admin.org_id!);
   const existingByName = new Map((existingCategories ?? []).map((c) => [c.name, c.id]));
   let nextOrder = (existingCategories ?? []).length;
+  const createdCategoryIds: string[] = [];
 
   const entriesToUpsert: { category_id: string; period: string; amount: number }[] = [];
 
@@ -102,17 +117,89 @@ export async function bulkApplyExpenseImport(categories: DetectedExpenseCategory
       if (error) throw new Error(error.message);
       categoryId = inserted.id;
       existingByName.set(category.label, categoryId);
+      createdCategoryIds.push(categoryId);
     }
     for (const entry of category.entries) {
       entriesToUpsert.push({ category_id: categoryId, period: entry.period, amount: entry.amount });
     }
   }
 
+  // Snapshot whatever's already sitting in the (category, month) cells this
+  // import is about to overwrite, before overwriting them — this is what
+  // makes undo a real "put it back the way it was" instead of a blind
+  // delete that could also wipe out unrelated manual entries.
+  const touchedCategoryIds = Array.from(new Set(entriesToUpsert.map((e) => e.category_id)));
+  const { data: priorEntries } =
+    touchedCategoryIds.length > 0
+      ? await supabase.from("expense_entries").select("category_id, period, amount").in("category_id", touchedCategoryIds)
+      : { data: [] };
+  const priorByKey = new Map((priorEntries ?? []).map((e) => [`${e.category_id}|${e.period}`, e.amount]));
+
+  const entryChanges: ExpenseImportManifest["entryChanges"] = entriesToUpsert.map((e) => ({
+    categoryId: e.category_id,
+    period: e.period,
+    previousAmount: priorByKey.get(`${e.category_id}|${e.period}`) ?? null,
+  }));
+
   if (entriesToUpsert.length > 0) {
     const { error } = await supabase
       .from("expense_entries")
       .upsert(entriesToUpsert, { onConflict: "category_id,period" });
     if (error) throw new Error(error.message);
+  }
+  refresh();
+  return { createdCategoryIds, entryChanges };
+}
+
+/**
+ * Reverses a bulkApplyExpenseImport() call using the manifest it returned —
+ * restores each touched entry to its prior value (or deletes it if it
+ * didn't exist before), and removes any category the import created from
+ * scratch, but only if nothing else has been entered into it since (so
+ * undo never eats manual work done after the import). Only meaningful
+ * against the exact manifest just returned — there's no server-side import
+ * history, so this only covers "I just imported the wrong file."
+ */
+export async function undoExpenseImport(manifest: ExpenseImportManifest) {
+  const admin = await requireAdmin();
+  const supabase = await createClient();
+
+  const toRestore = manifest.entryChanges.filter(
+    (e): e is typeof e & { previousAmount: number } => e.previousAmount !== null,
+  );
+  const toDelete = manifest.entryChanges.filter((e) => e.previousAmount === null);
+
+  if (toRestore.length > 0) {
+    const { error } = await supabase
+      .from("expense_entries")
+      .upsert(
+        toRestore.map((e) => ({ category_id: e.categoryId, period: e.period, amount: e.previousAmount })),
+        { onConflict: "category_id,period" },
+      );
+    if (error) throw new Error(error.message);
+  }
+  for (const e of toDelete) {
+    const { error } = await supabase
+      .from("expense_entries")
+      .delete()
+      .eq("category_id", e.categoryId)
+      .eq("period", e.period);
+    if (error) throw new Error(error.message);
+  }
+
+  for (const categoryId of manifest.createdCategoryIds) {
+    const { count } = await supabase
+      .from("expense_entries")
+      .select("id", { count: "exact", head: true })
+      .eq("category_id", categoryId);
+    if (!count) {
+      const { error } = await supabase
+        .from("expense_categories")
+        .delete()
+        .eq("id", categoryId)
+        .eq("org_id", admin.org_id!);
+      if (error) throw new Error(error.message);
+    }
   }
   refresh();
 }
