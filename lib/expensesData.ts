@@ -80,3 +80,25 @@ export async function fetchMostRecentExpensePeriod(
     .limit(1);
   return data?.[0]?.period ?? null;
 }
+
+/**
+ * Just the total for one period, across every category — used by the
+ * Reserve Fund page's cash-position summary, which only needs the one
+ * number, not the full category breakdown fetchExpensesForPeriod builds.
+ */
+export async function fetchOperatingExpenseTotal(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  orgId: string,
+  period: string,
+): Promise<number> {
+  const { data: categoriesRaw } = await supabase.from("expense_categories").select("id").eq("org_id", orgId);
+  const categoryIds = (categoriesRaw ?? []).map((c) => c.id);
+  if (categoryIds.length === 0) return 0;
+
+  const { data } = await supabase
+    .from("expense_entries")
+    .select("amount")
+    .eq("period", period)
+    .in("category_id", categoryIds);
+  return (data ?? []).reduce((sum, e) => sum + Number(e.amount), 0);
+}

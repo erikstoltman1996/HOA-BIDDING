@@ -1,11 +1,18 @@
 import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
+import { fetchMostRecentExpensePeriod, fetchOperatingExpenseTotal } from "@/lib/expensesData";
+import { currentPeriod } from "@/lib/dues";
 import { ReserveTrackerPanel } from "@/components/reserve/ReserveTrackerPanel";
+import { ReserveCashSummary } from "@/components/reserve/ReserveCashSummary";
 import { AppHeader } from "@/components/AppHeader";
 import { SectionNav } from "@/components/SectionNav";
 import { exportReserveOutlookCsv } from "./actions";
 
-export default async function ReservePage() {
+export default async function ReservePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ cashPeriod?: string }>;
+}) {
   const { authUser, profile } = await requireUser();
   const supabase = await createClient();
 
@@ -17,13 +24,22 @@ export default async function ReservePage() {
     );
   }
 
-  const [{ data: org }, { data: settings }, { data: assets }] = await Promise.all([
+  // Same "land on real data, not a blank current month" logic as /expenses —
+  // see fetchMostRecentExpensePeriod's own comment.
+  const { cashPeriod: cashPeriodParam } = await searchParams;
+  const cashPeriod =
+    cashPeriodParam || (await fetchMostRecentExpensePeriod(supabase, profile.org_id)) || currentPeriod();
+
+  const [{ data: org }, { data: settings }, { data: assets }, operatingExpenseTotal] = await Promise.all([
     supabase.from("organizations").select("*").eq("id", profile.org_id).single(),
     supabase.from("reserve_settings").select("*").eq("org_id", profile.org_id).maybeSingle(),
     supabase.from("reserve_assets").select("*").eq("org_id", profile.org_id).order("name"),
+    fetchOperatingExpenseTotal(supabase, profile.org_id, cashPeriod),
   ]);
 
   const isAdmin = profile.role === "admin";
+  const currentBalance = settings?.current_balance ?? 0;
+  const annualContribution = settings?.annual_contribution ?? 0;
 
   return (
     <div className="min-h-screen w-full">
@@ -38,10 +54,18 @@ export default async function ReservePage() {
 
         <ReserveTrackerPanel
           isAdmin={isAdmin}
-          initialBalance={settings?.current_balance ?? 0}
-          initialContribution={settings?.annual_contribution ?? 0}
+          initialBalance={currentBalance}
+          initialContribution={annualContribution}
           initialAssets={assets ?? []}
           exportCsv={exportReserveOutlookCsv}
+          cashSummary={
+            <ReserveCashSummary
+              period={cashPeriod}
+              currentReserveBalance={currentBalance}
+              monthlyContribution={annualContribution / 12}
+              operatingExpenseTotal={operatingExpenseTotal}
+            />
+          }
         />
       </div>
     </div>

@@ -40,12 +40,19 @@ export function ReserveTrackerPanel({
   initialContribution,
   initialAssets,
   exportCsv,
+  cashSummary,
 }: {
   isAdmin: boolean;
   initialBalance: number;
   initialContribution: number;
   initialAssets: ReserveAssetRow[];
   exportCsv: () => Promise<string>;
+  /** The cash-position card (ReserveCashSummary), rendered server-side in
+   *  page.tsx and slotted in here so it lands under the page title but
+   *  above the editable balance/contribution strip — matching where every
+   *  other section puts its summary, without this component needing to
+   *  know anything about expenses data itself. */
+  cashSummary?: React.ReactNode;
 }) {
   const [balance, setBalance] = useState(String(initialBalance));
   const [contribution, setContribution] = useState(String(initialContribution));
@@ -180,6 +187,8 @@ export function ReserveTrackerPanel({
         </div>
         <ExportCsvButton action={exportCsv} filename="reserve-outlook.csv" />
       </div>
+
+      {cashSummary}
 
       <div className="mb-6 flex flex-wrap gap-6 rounded border border-rule bg-paper-card shadow-card p-3">
         <div>
