@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth";
 import { ReserveTrackerService, type CommunityAsset } from "@/lib/ReserveTrackerService";
 import { fetchDuesChargesForPeriod } from "@/lib/duesData";
+import { fetchExpensesForPeriod, fetchMostRecentExpensePeriod } from "@/lib/expensesData";
+import { summarizeExpenses } from "@/lib/expenses";
 import { currentPeriod, calculateCollectionRate, formatPeriodLabel } from "@/lib/dues";
 import { fmt } from "@/lib/money";
 import { DUES_COLLECTION_THRESHOLDS, healthBandColor } from "@/lib/healthBand";
@@ -38,16 +40,26 @@ export default async function HomePage() {
   const isAdmin = profile.role === "admin";
   const period = currentPeriod();
 
-  const [{ data: org }, { data: projectsRaw }, { data: settings }, { units, charges }] = await Promise.all([
-    supabase.from("organizations").select("*").eq("id", profile.org_id).single(),
-    supabase
-      .from("projects")
-      .select("*")
-      .eq("org_id", profile.org_id)
-      .order("created_at", { ascending: false }),
-    supabase.from("reserve_settings").select("*").eq("org_id", profile.org_id).maybeSingle(),
-    fetchDuesChargesForPeriod(supabase, profile.org_id, period),
-  ]);
+  const [{ data: org }, { data: projectsRaw }, { data: settings }, { units, charges }, mostRecentExpensePeriod] =
+    await Promise.all([
+      supabase.from("organizations").select("*").eq("id", profile.org_id).single(),
+      supabase
+        .from("projects")
+        .select("*")
+        .eq("org_id", profile.org_id)
+        .order("created_at", { ascending: false }),
+      supabase.from("reserve_settings").select("*").eq("org_id", profile.org_id).maybeSingle(),
+      fetchDuesChargesForPeriod(supabase, profile.org_id, period),
+      fetchMostRecentExpensePeriod(supabase, profile.org_id),
+    ]);
+
+  // Same "land on real data, not blank today" logic as /expenses and the
+  // Reserve cash summary — a dashboard tile showing $0 because nothing's
+  // been entered yet for the actual calendar month reads as "broken," not
+  // "nothing due this month."
+  const expensesPeriod = mostRecentExpensePeriod ?? period;
+  const { entries: expenseEntries } = await fetchExpensesForPeriod(supabase, profile.org_id, expensesPeriod);
+  const expensesSummary = summarizeExpenses(expenseEntries);
 
   const projects = projectsRaw ?? [];
   // The most recently started project that isn't finished yet — the one a
@@ -166,7 +178,7 @@ export default async function HomePage() {
         </div>
 
         {/* Top stat row */}
-        <div className="mb-10 grid grid-cols-1 gap-5 sm:grid-cols-2">
+        <div className="mb-10 grid grid-cols-1 gap-5 sm:grid-cols-3">
           <StatTile
             href="/reserve"
             label="Reserve Fund"
@@ -180,6 +192,16 @@ export default async function HomePage() {
             value={`${collectionRate.toFixed(0)}%`}
             sublabel={formatPeriodLabel(period)}
             color={healthBandColor(collectionRate, DUES_COLLECTION_THRESHOLDS)}
+          />
+          <StatTile
+            href="/expenses"
+            label="Operating Expenses"
+            value={fmt(expensesSummary.totalThisPeriod)}
+            sublabel={formatPeriodLabel(expensesPeriod)}
+            // No health-band color here, same reasoning as ExpensesSummary
+            // on /expenses itself — a raw expense total has no inherent
+            // good/bad threshold without a budget to compare it against.
+            color="#1F2B3D"
           />
         </div>
 
@@ -221,6 +243,41 @@ export default async function HomePage() {
                 </Link>
                 .
               </p>
+            )}
+          </div>
+        </Section>
+
+        {/* Operating Expenses */}
+        <Section
+          title="Operating Expenses"
+          action={
+            <Link href="/expenses" className="text-sm text-ink underline hover:text-gold">
+              Manage expenses →
+            </Link>
+          }
+        >
+          <div className="rounded-lg border border-rule bg-paper-card p-5 shadow-card">
+            {expensesSummary.totalCategories === 0 ? (
+              <p className="text-sm text-ink-soft">
+                Not set up yet —{" "}
+                <Link href="/expenses" className="underline hover:text-ink">
+                  add expense categories or import a bookkeeping export
+                </Link>
+                .
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-6">
+                <div>
+                  <div className="text-xs text-ink-soft">Total, {formatPeriodLabel(expensesPeriod)}</div>
+                  <div className="font-mono text-lg text-ink">{fmt(expensesSummary.totalThisPeriod)}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-ink-soft">Entered</div>
+                  <div className="font-mono text-lg text-ink">
+                    {expensesSummary.categoriesEntered} of {expensesSummary.totalCategories} categories
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         </Section>
