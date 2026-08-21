@@ -4,33 +4,36 @@ import { formatPeriodLabel, shiftPeriod } from "@/lib/dues";
 import { ChevronLeft, ChevronRight } from "@/components/bid-ledger/icons";
 
 /**
- * "What's actually left after we pay the bills this month" — combines the
- * reserve fund's own numbers with the Expenses tab's actual entered totals,
- * which the Yearly/Monthly Outlook tables below deliberately never do (they
- * stay pure reserve math). This is explicitly a snapshot, not a ledger: the
- * reserve balance is always "as of today" (there's no month-by-month
- * historical reserve balance stored anywhere), only the operating expense
- * side is genuinely tied to the month being viewed. Real HOA bylaws often
- * keep reserve and operating funds in legally separate accounts, too — this
- * combines them for a quick read, not as a statement that they're one pot.
+ * Shows the reserve balance and a month's actual operating expenses side
+ * by side — deliberately NOT summed into one "combined balance" figure.
+ *
+ * An earlier version did sum them (balance + one month's contribution −
+ * that month's expenses), which is wrong whenever the stored balance
+ * itself came from importing a bookkeeping file's ending balance for that
+ * same month — that balance already has the month's expenses paid out of
+ * it, so subtracting them again double-counts. There's no reliable way to
+ * tell "this balance is a live right-now figure" apart from "this balance
+ * already reflects the month being viewed" (reserve_settings has no
+ * per-month history, just one mutable point value), so combining them can
+ * never be made safe in general. Showing both numbers plainly, with an
+ * "as of" timestamp on the balance, lets the reader do that judgment call
+ * themselves instead of being handed a number that might be wrong.
  */
 export function ReserveCashSummary({
   period,
   currentReserveBalance,
-  monthlyContribution,
+  balanceUpdatedAt,
   operatingExpenseTotal,
 }: {
   period: string;
   currentReserveBalance: number;
-  monthlyContribution: number;
+  balanceUpdatedAt: string | null;
   operatingExpenseTotal: number;
 }) {
-  const combinedBalance = currentReserveBalance + monthlyContribution - operatingExpenseTotal;
-
   return (
     <div className="mb-6 rounded border border-rule bg-paper-card shadow-card p-3">
       <div className="mb-2 flex items-center justify-between">
-        <div className="text-xs font-medium text-ink-soft">Cash position after operating expenses</div>
+        <div className="text-xs font-medium text-ink-soft">Reserve balance &amp; operating expenses</div>
         <div className="flex items-center gap-2 text-sm">
           <Link
             href={`/reserve?cashPeriod=${shiftPeriod(period, -1)}`}
@@ -51,18 +54,16 @@ export function ReserveCashSummary({
       </div>
       <div className="flex flex-wrap items-end gap-6">
         <div>
-          <div className="mb-1 text-xs text-ink-soft">+ Reserve contribution</div>
-          <p className="font-mono text-lg text-check-green">{fmt(monthlyContribution)}</p>
+          <div className="mb-1 text-xs text-ink-soft">
+            Reserve balance{balanceUpdatedAt ? ` (as of ${new Date(balanceUpdatedAt).toLocaleDateString()})` : ""}
+          </div>
+          <p className="font-mono text-2xl font-bold text-ink">{fmt(currentReserveBalance)}</p>
         </div>
         <div>
-          <div className="mb-1 text-xs text-ink-soft">− Operating expenses</div>
-          <p className="font-mono text-lg text-danger">
+          <div className="mb-1 text-xs text-ink-soft">{formatPeriodLabel(period)} operating expenses</div>
+          <p className="font-mono text-2xl font-bold text-danger">
             {operatingExpenseTotal > 0 ? fmt(operatingExpenseTotal) : "—"}
           </p>
-        </div>
-        <div>
-          <div className="mb-1 text-xs text-ink-soft">Combined balance</div>
-          <p className="font-mono text-2xl font-bold text-ink">{fmt(combinedBalance)}</p>
         </div>
         <Link
           href={`/expenses?period=${period}`}
@@ -72,9 +73,10 @@ export function ReserveCashSummary({
         </Link>
       </div>
       <p className="mt-2 text-[11px] leading-tight text-ink-soft">
-        Today&apos;s reserve balance plus one month&apos;s contribution, minus {formatPeriodLabel(period)}&apos;s
-        actual entered operating expenses — a quick combined snapshot, not a historical ledger (many HOAs keep
-        reserve and operating funds in separate accounts). The Outlook below reflects reserve activity only.
+        Shown side by side, not added together — if the reserve balance came from importing a bookkeeping file&apos;s
+        ending balance for {formatPeriodLabel(period)}, that figure already has these expenses paid out of it, so
+        combining them would double-count. Many HOAs keep reserve and operating funds in separate accounts, too.
+        The Outlook below reflects reserve activity only.
       </p>
     </div>
   );

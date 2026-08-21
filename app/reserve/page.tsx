@@ -62,7 +62,7 @@ export default async function ReservePage({
             <ReserveCashSummary
               period={cashPeriod}
               currentReserveBalance={currentBalance}
-              monthlyContribution={annualContribution / 12}
+              balanceUpdatedAt={settings?.updated_at ?? null}
               operatingExpenseTotal={operatingExpenseTotal}
             />
           }
